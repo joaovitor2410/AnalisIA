@@ -1,0 +1,35 @@
+[project]
+name = "olheiro"
+version = "0.1.0"
+description = "Agente de IA analista de dados: perguntas em português, respostas com SQL, tabela e gráfico como evidência."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "duckdb>=1.5.6",
+    "pydantic-settings>=2.16.0",
+]
+
+[project.scripts]
+olheiro-load = "olheiro.db:main"
+olheiro-check = "olheiro.check_setup:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.1,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+# E/F: erros básicos | I: ordem de imports | UP: sintaxe moderna | B: bugs comuns
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

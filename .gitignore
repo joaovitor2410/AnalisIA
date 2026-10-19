@@ -1,0 +1,20 @@
+# Segredos
+.env
+
+# Ambiente e caches do Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Banco gerado a partir dos CSVs (pode ser recriado com `uv run olheiro-load`)
+data/*.duckdb
+data/*.duckdb.wal
+
+# Exportações geradas pelo agente
+data/exports/*
+!data/exports/.gitkeep
+
+# Sistema
+.DS_Store
