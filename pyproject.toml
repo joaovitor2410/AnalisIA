@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "duckdb>=1.5.6",
+    "google-genai>=2.31.0",
     "pydantic-settings>=2.16.0",
 ]
 
@@ -33,3 +34,5 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# learning/ não é pacote: entra no path para os testes importarem os scripts de estudo
+pythonpath = ["learning"]

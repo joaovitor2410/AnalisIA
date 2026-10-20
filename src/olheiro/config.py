@@ -46,6 +46,11 @@ class Settings(BaseSettings):
         """Provedor do modelo, ex.: 'google' em 'google:gemini-3.8-flash'."""
         return self.olheiro_model.split(":", 1)[0]
 
+    @property
+    def model_name(self) -> str:
+        """Nome do modelo sem o provedor, ex.: 'gemini-3.8-flash' (formato dos SDKs nativos)."""
+        return self.olheiro_model.split(":", 1)[-1]
+
     def api_key_for_model(self) -> SecretStr | None:
         """Devolve a chave do provedor configurado (ou None se faltar/desconhecido)."""
         field_name = PROVIDER_KEY_FIELDS.get(self.provider)
