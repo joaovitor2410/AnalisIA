@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-from olheiro.agent import ChartSpec
-from olheiro.charts import build_figure, save_figure
+import pytest
+
+from olheiro.charts import ChartError, ChartSpec, build_figure, check_chart, save_figure
 from olheiro.tools import QueryResult
 
 EVIDENCE = QueryResult(columns=["season", "points"], rows=[(2019, 90), (2020, 71)])
@@ -29,3 +30,31 @@ def test_save_figure_writes_html(tmp_path: Path) -> None:
     path = save_figure(build_figure(spec, EVIDENCE), tmp_path / "exports")
     assert path.suffix == ".html"
     assert "Pontos" in path.read_text(encoding="utf-8")
+
+
+def test_metric_shows_first_row_value_with_label() -> None:
+    evidence = QueryResult(columns=["team", "titles"], rows=[("Corinthians", 4), ("Palmeiras", 4)])
+    spec = ChartSpec(kind="metric", x="team", y="titles", title="Mais títulos")
+    indicator = build_figure(spec, evidence).data[0]
+    assert indicator.type == "indicator"
+    assert indicator.value == 4
+    assert "Corinthians" in indicator.title.text
+
+
+@pytest.mark.parametrize(
+    ("spec", "reason"),
+    [
+        (ChartSpec(kind="bar", y="points", title="t"), "precisa da coluna x"),
+        (ChartSpec(kind="line", x="season", y="gols", title="t"), "fora do resultado"),
+        (ChartSpec(kind="bar", x="points", y="season_name", title="t"), "fora do resultado"),
+    ],
+)
+def test_check_chart_rejects_specs_that_do_not_fit_the_result(spec: ChartSpec, reason: str) -> None:
+    with pytest.raises(ChartError, match=reason):
+        check_chart(spec, EVIDENCE)
+
+
+def test_metric_needs_at_least_one_row() -> None:
+    spec = ChartSpec(kind="metric", y="points", title="t")
+    with pytest.raises(ChartError, match="pelo menos uma linha"):
+        check_chart(spec, QueryResult(columns=["points"], rows=[]))

@@ -8,6 +8,17 @@ responder. Dataset de demonstração: Campeonato Brasileiro 2003–2024 (`data/r
 `data/raw/teams.csv`). Projeto de portfólio de João Victor (CC, foco em Dados/BI), construído
 em fases com mentoria. **Primeiro projeto de agentes do autor: explicar conceitos antes de codar.**
 
+## Visão do produto (definida em 2026-10-22)
+Destino: integrar ao portfólio do autor como ferramenta de consultas, buscas, gráficos e
+dashboards. **Onde hospedar ainda não foi decidido** (opções: app Streamlit publicado + link,
+API + frontend no site do portfólio, ou só local + vídeo). Por isso: núcleo independente de
+interface (agent, cache, dashboard, semantic, storage); Streamlit é só uma camada fina.
+- Funções: chat analítico com evidência e passos do agente; dashboard (fixar respostas, KPIs);
+  explorador de dados; perguntas prontas via cache. Upload de CSV do visitante: fora por ora.
+- Ideia central: o LLM **cria** a análise uma vez; dashboard e cache **reexecutam** o SQL
+  validado, sem o modelo (custo zero, sempre com os dados atuais).
+- Demo pública (quando publicar): cache + limite de perguntas por sessão (escolha do autor).
+
 ## Regras de trabalho (do autor)
 - Trabalhar em fases. Ao fim de cada fase: parar, resumir, **fazer o commit** (Conventional
   Commits), fazer 3 perguntas de entrevista e esperar "ok".
@@ -15,6 +26,8 @@ em fases com mentoria. **Primeiro projeto de agentes do autor: explicar conceito
 - Antes de codar uma fase: explicar o conceito e o plano em até 15 linhas.
 - Conferir documentação e versão atuais antes de usar bibliotecas/APIs. Não inventar parâmetros.
 - Sempre passar os comandos exatos para rodar e testar.
+- Testes com o Gemini real: o mínimo possível (cota de 20 req/dia). Validar tudo offline
+  (FunctionModel, AppTest) e usar o modelo só para 1 verificação final por fase.
 - Atualizar este arquivo ao fim de cada fase.
 
 ## Convenções
@@ -54,6 +67,13 @@ em fases com mentoria. **Primeiro projeto de agentes do autor: explicar conceito
 | `FallbackModel` (`OLHEIRO_FALLBACK_MODEL`) + `request_timeout=60s` | 503, cota esgotada ou requisição pendurada caem para o modelo reserva. Sem timeout, uma chamada travou >5 min. |
 | Retentativas do SDK (`max_retries=2`) só no último modelo da cadeia | Principal falha na hora para o fallback entrar sem atraso; o reserva insiste em 429/5xx com espera crescente (recomendação da doc do Pydantic AI). |
 | `olheiro.errors.explain_model_failure` | Sem isso, a falha total mostrava só "All models from FallbackModel failed (2 sub-exceptions)". Agora: uma linha por modelo com HTTP, motivo, limite e quando liberar. Reaproveitável no Streamlit. |
+| F4: `ChartSpec` em `charts.py` com `kind="metric"` (KPI) | Visualização é do domínio de gráficos e o dashboard também a usa. `check_chart` levanta `ChartError` neutro; o agente converte em `ModelRetry`. KPI: `go.Indicator` na CLI, `st.metric` no app. |
+| Cache de respostas (`cache.py`) guarda `AnalysisAnswer`, não a tabela | No acerto, valida e reexecuta o SQL (números atuais, 0 requisições). Chave = pergunta normalizada. Pausas para aprovação não entram no cache (repetir não regravaria). `AgentReport.from_cache` informa a origem. |
+| Dashboard (`dashboard.py`) = SQL + `ChartSpec` em JSON | Redesenhado sem o modelo; SQL revalidado ao renderizar (o arquivo pode ser editado). Só respostas com evidência podem ser fixadas. |
+| `storage.JsonFile` (lock + escrita atômica) | Compartilhado por cache e dashboard; é o ponto a trocar por um banco num deploy multiusuário. |
+| Uma conexão blindada por processo + `session_cursor` por sessão | DuckDB pede um cursor por thread e não anexa o mesmo arquivo duas vezes no processo. Testado: o cursor herda a blindagem (global) mas **não** o `USE lake` (por conexão), então `session_cursor` repete o `USE`. |
+| Streamlit (`ui/`, `app.py`) com `st.navigation` e páginas-função | Perguntar (chat, exemplos do cache via `st.pills`, aprovação por botões, fixar), Dashboard (KPIs em linha, cartões 2 colunas) e Dados (glossário, prévia, perfil). `width="stretch"` substituiu `use_container_width`. |
+| Testes de UI com `AppTest` | `from_function` por página (o `switch_page` exige arquivo); modelo bloqueado ou `FunctionModel` via `monkeypatch` em `ui.resources.build_model`; arquivos do app apontados para `tmp_path` por variáveis de ambiente. |
 | Modelo construído com chave explícita (`GoogleProvider(api_key=...)`) | Sem a chave, o provider leria `os.environ`; mantém a regra "só Settings". |
 | F3: defesa em profundidade, 3 camadas independentes | Cada uma bloqueia sozinha: (1) `sql_guard` (sqlglot), (2) motor DuckDB blindado, (3) aprovação humana para gravar. |
 | Camada 1, `sql_guard.check_query` | Uma única consulta (`exp.Query`); toda tabela é um nome (não função/arquivo) em `raw`/`workspace` ou um CTE. Bloqueia `read_csv(...)`, `FROM 'arquivo'`, DDL/DML, `COPY`, `ATTACH`, `SET`, catálogo explícito. Erros sem códigos de cor (campos de `ParseError.errors`). |
@@ -64,7 +84,8 @@ em fases com mentoria. **Primeiro projeto de agentes do autor: explicar conceito
 
 Versões verificadas em 2026-10-19: duckdb 1.5.6, pydantic-settings 2.16.0, pytest 9.1.1,
 ruff 0.17.1, uv 0.13.1, google-genai 2.31.0 (F1). Em 2026-10-21: pydantic-ai-slim 2.59.0,
-plotly 7.1.0 (F2). Em 2026-10-22: sqlglot 30.24.0 (F3); duckdb 2.0.0 saiu, mantido 1.5.6 (atualizar na F8). Na 2.59, `result.usage` é propriedade (não método); o banner some com
+plotly 7.1.0 (F2). Em 2026-10-22: sqlglot 30.24.0 (F3); duckdb 2.0.0 saiu, mantido 1.5.6 (atualizar na F8);
+streamlit 1.66.1 e pandas 3.1.0 (F4). Na 2.59, `result.usage` é propriedade (não método); o banner some com
 `pydantic_ai.BANNER_ENABLED = False`.
 Pydantic AI + Gemini: extra `pydantic-ai-slim[google]`, prefixo `google:`, chave em
 `GOOGLE_API_KEY` (docs: https://pydantic.dev/docs/ai/models/google/). Modelo Flash estável
@@ -97,8 +118,13 @@ src/olheiro/tools.py        execução de SQL (query_rows, com timeout) e ferram
 src/olheiro/sql_guard.py    validador de SQL (camada 1 da defesa)
 src/olheiro/semantic.py     glossário -> contexto do agente (camada de contexto)
 src/olheiro/agent.py        agente Pydantic AI: saída estruturada, validador, ask()/resume()
-src/olheiro/charts.py       ChartSpec + evidência -> figura Plotly (HTML)
-src/olheiro/cli.py          comando olheiro-ask
+src/olheiro/charts.py       ChartSpec (bar/line/metric), check_chart, figura Plotly
+src/olheiro/cli.py          comando olheiro-ask (--verbose, --no-cache)
+src/olheiro/cache.py        cache de respostas + ask_with_cache
+src/olheiro/dashboard.py    itens fixados (SQL + ChartSpec) e render_item
+src/olheiro/storage.py      JsonFile: modelo Pydantic em JSON com lock e escrita atômica
+src/olheiro/app.py          entrada do Streamlit (navegação + barra lateral)
+src/olheiro/ui/             páginas Perguntar, Dashboard, Dados + recursos e componentes
 src/olheiro/errors.py       explica falhas do modelo (cota, 503, prazo) em português
 learning/manual_loop.py     F1: loop do agente à mão com google-genai (material de estudo)
 tests/                      pytest (pythonpath inclui learning/)
@@ -136,7 +162,11 @@ Pastas futuras: `evals/` (F5).
   timeout de consulta, glossário + valores reais no contexto, `olheiro-check` verifica blindagem
   e glossário. 75 testes. Teste real único (4 requisições): aproveitamento dos campeões (regra
   do glossário aplicada: Cruzeiro 2003 em 3º, não 1º) + `save_result` aprovado → tabela gravada.
-- [ ] Fase 4: Streamlit
+- [x] **Fase 4: produto no Streamlit.** Chat com evidência e passos, aprovação por botões,
+  KPIs, dashboard reexecutado sem LLM, explorador de dados, cache de respostas (exemplos) e
+  limite por sessão. 97 testes (inclui AppTest). Teste real único: KPI "títulos do Flamengo"
+  = 3 (4 requisições) e a repetição veio do cache (0 requisições).
+  Rodar: `uv run streamlit run src/olheiro/app.py`.
 - [ ] Fase 5: evals (30+ perguntas, 2 modelos)
 - [ ] Fase 6: observabilidade
 - [ ] Fase 7: servidor MCP
@@ -152,6 +182,14 @@ Pastas futuras: `evals/` (F5).
   20 requisições/dia por modelo. Decidir antes: nível pago, modelos lite, ou rodar em lotes por dia.
 - **Latência/custo (Fase 6):** pergunta com gráfico levou 7 requisições (~19k tokens); recusa
   levou ~55 s. Observar por passo.
+- **Para a publicação (F8):** decidir a hospedagem; cache curado de exemplos versionado (hoje
+  `data/answer_cache.json` é local e ignorado no Git); dashboard por visitante (hoje é um
+  arquivo único, compartilhado); `OLHEIRO_SESSION_QUESTION_LIMIT` ligado.
+- **Limitações conhecidas:** perguntas independentes (sem memória de conversa: "e em 2020?" não
+  funciona); resposta do cache pode ficar com texto desatualizado se os dados mudarem (os
+  números não, pois o SQL é reexecutado). Apagar `data/answer_cache.json` limpa o cache.
+- Empates: Corinthians e Palmeiras têm 4 títulos cada. Um teste meu com `LIMIT 1` escondeu o
+  empate; o agente agora recebe a regra "confira empates (RANK() = 1)".
 - Aviso `DeprecationWarning: There is no current event loop` vem do `pydantic_graph` no
   `run_sync` (interno da biblioteca, não do nosso código).
 - Decidir se os CSVs do dataset vão para o Git (necessário para o deploy da Fase 8; checar licença

@@ -112,11 +112,17 @@ def run_sql(con: duckdb.DuckDBPyConnection, query: str, max_rows: int = MAX_ROWS
     return {"result": result.to_markdown()}
 
 
-def profile_column(con: duckdb.DuckDBPyConnection, table: str, column: str) -> dict[str, str]:
-    """Ferramenta: tipo, nulos, distintos, mínimo/máximo e valores mais frequentes de uma coluna.
+@dataclass(frozen=True)
+class ColumnProfile:
+    """Perfil de uma coluna: estatísticas gerais e valores por frequência."""
 
-    Serve para o modelo conhecer os valores reais antes de filtrar (ex.: como um time está escrito).
-    """
+    data_type: str
+    stats: QueryResult
+    top_values: QueryResult
+
+
+def column_profile(con: duckdb.DuckDBPyConnection, table: str, column: str) -> ColumnProfile:
+    """Perfil de uma coluna de raw. Levanta ValueError se a tabela ou a coluna não existir."""
     table = table.removeprefix(f"{RAW_SCHEMA}.")
     found = con.execute(
         """
@@ -126,7 +132,7 @@ def profile_column(con: duckdb.DuckDBPyConnection, table: str, column: str) -> d
         [RAW_SCHEMA, table, column],
     ).fetchone()
     if found is None:
-        return {"error": f"Coluna '{column}' não existe em {RAW_SCHEMA}.{table}. Confira o schema."}
+        raise ValueError(f"Coluna '{column}' não existe em {RAW_SCHEMA}.{table}. Confira o schema.")
 
     # Seguro interpolar: tabela e coluna acabaram de ser confirmadas no catálogo do banco.
     source, col = f'{RAW_SCHEMA}."{table}"', f'"{column}"'
@@ -138,14 +144,23 @@ def profile_column(con: duckdb.DuckDBPyConnection, table: str, column: str) -> d
         FROM {source}
         """,
     )
-    top = query_rows(
+    top_values = query_rows(
         con,
         f"SELECT {col} AS value, count(*) AS rows FROM {source} "
         "GROUP BY ALL ORDER BY rows DESC, value",
     )
+    return ColumnProfile(found[0], stats, top_values)
+
+
+def profile_column(con: duckdb.DuckDBPyConnection, table: str, column: str) -> dict[str, str]:
+    """Ferramenta: o perfil da coluna em texto, para o modelo conhecer os valores reais."""
+    try:
+        profile = column_profile(con, table, column)
+    except ValueError as error:
+        return {"error": str(error)}
     return {
-        "result": f"Tipo: {found[0]}\n{stats.to_markdown()}\n\n"
-        f"Valores por frequência:\n{top.to_markdown()}"
+        "result": f"Tipo: {profile.data_type}\n{profile.stats.to_markdown()}\n\n"
+        f"Valores por frequência:\n{profile.top_values.to_markdown()}"
     }
 
 

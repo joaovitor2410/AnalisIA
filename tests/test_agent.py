@@ -107,7 +107,7 @@ def test_answer_uses_tools_and_reexecutes_evidence(con: duckdb.DuckDBPyConnectio
                 "sql": "SELECT team, season FROM raw.brasileirao",
                 "chart": {"kind": "bar", "x": "season", "y": "team", "title": "t"},
             },
-            "precisa ser uma coluna numérica",
+            "precisa ser numérica",
         ),
     ],
 )

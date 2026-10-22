@@ -3,6 +3,7 @@
 Uso:
     uv run olheiro-ask "Quem foi o campeão de 2019?"
     uv run olheiro-ask --verbose "Qual região tem mais títulos?"
+    uv run olheiro-ask --no-cache "Quem foi o campeão de 2019?"   (força ir ao modelo)
 
 Se o agente quiser salvar um resultado (save_result), a CLI mostra o SQL e uma prévia e só
 grava em workspace com a confirmação do usuário.
@@ -15,9 +16,17 @@ from pathlib import Path
 import duckdb
 import pydantic_ai
 from pydantic_ai.exceptions import AgentRunError, FallbackExceptionGroup
-from pydantic_ai.messages import ModelMessage, RetryPromptPart, ToolCallPart
 
-from olheiro.agent import AgentDeps, AgentReport, PendingApproval, ask, build_model, resume
+from olheiro.agent import (
+    AgentDeps,
+    AgentReport,
+    PendingApproval,
+    ask,
+    build_model,
+    describe_steps,
+    resume,
+)
+from olheiro.cache import AnswerCache, ask_with_cache
 from olheiro.charts import build_figure, save_figure
 from olheiro.config import get_settings
 from olheiro.db import WORKSPACE_CATALOG, connect_agent
@@ -32,19 +41,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="olheiro-ask", description="Pergunte aos dados.")
     parser.add_argument("question", help="pergunta em português")
     parser.add_argument("--verbose", action="store_true", help="mostra as chamadas de ferramenta")
+    parser.add_argument("--no-cache", action="store_true", help="ignora respostas guardadas")
     return parser.parse_args(argv)
-
-
-def format_trace(messages: list[ModelMessage]) -> list[str]:
-    """Uma linha por chamada de ferramenta e por retentativa pedida ao modelo."""
-    lines = []
-    for message in messages:
-        for part in message.parts:
-            if isinstance(part, ToolCallPart):
-                lines.append(f"  → {part.tool_name}({part.args_as_dict()})")
-            elif isinstance(part, RetryPromptPart):
-                lines.append(f"  ↻ retentativa: {str(part.content).splitlines()[0][:200]}")
-    return lines
 
 
 def format_report(report: AgentReport, chart_path: Path | None) -> str:
@@ -63,10 +61,13 @@ def format_report(report: AgentReport, chart_path: Path | None) -> str:
     if chart_path is not None:
         sections.append(f"Gráfico: {chart_path}")
     usage = report.usage
-    sections.append(
-        f"── {report.model_name} · {usage.requests} requisições · {usage.tool_calls} ferramentas · "
-        f"{usage.input_tokens + usage.output_tokens} tokens"
-    )
+    if report.from_cache:
+        sections.append(f"── resposta do cache (gerada por {report.model_name}) · 0 requisições")
+    else:
+        sections.append(
+            f"── {report.model_name} · {usage.requests} requisições · "
+            f"{usage.tool_calls} ferramentas · {usage.input_tokens + usage.output_tokens} tokens"
+        )
     return "\n\n".join(sections)
 
 
@@ -98,7 +99,11 @@ def main(argv: list[str] | None = None) -> None:
     with connect_agent(settings.duckdb_path, settings.workspace_path) as con:
         deps = AgentDeps(con, glossary)
         try:
-            outcome = ask(args.question, deps, model)
+            if args.no_cache:
+                outcome = ask(args.question, deps, model)
+            else:
+                cache = AnswerCache(settings.answer_cache_path)
+                outcome = ask_with_cache(args.question, deps, cache, model)
             while isinstance(outcome, PendingApproval):
                 outcome = resume(outcome, confirm_save(outcome, con), deps, model)
         except (AgentRunError, FallbackExceptionGroup) as error:
@@ -113,5 +118,6 @@ def main(argv: list[str] | None = None) -> None:
         )
 
     if args.verbose:
-        print("Passos do agente:\n" + "\n".join(format_trace(report.messages)) + "\n")
+        steps = describe_steps(report.messages) or ["(resposta do cache: nenhum passo)"]
+        print("Passos do agente:\n" + "\n".join(f"  {step}" for step in steps) + "\n")
     print(format_report(report, chart_path))

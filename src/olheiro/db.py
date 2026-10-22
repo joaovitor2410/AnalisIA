@@ -77,6 +77,17 @@ def connect_agent(db_path: Path, workspace_path: Path) -> duckdb.DuckDBPyConnect
     return con
 
 
+def session_cursor(base: duckdb.DuckDBPyConnection) -> duckdb.DuckDBPyConnection:
+    """Cursor para uma sessão/thread (ex.: um visitante no Streamlit) sobre a conexão do agente.
+
+    O DuckDB pede um cursor por thread. Ele herda a blindagem (configuração global do banco),
+    mas não o USE (vale só para a conexão onde rodou): sem repetir, "raw.teams" não resolve.
+    """
+    cursor = base.cursor()
+    cursor.execute(f"USE {LAKE_CATALOG}")
+    return cursor
+
+
 def find_csv_files(raw_dir: Path) -> list[Path]:
     """Lista os CSVs da pasta de dados brutos, em ordem alfabética."""
     return sorted(raw_dir.glob("*.csv"))

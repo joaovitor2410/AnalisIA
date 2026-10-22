@@ -12,6 +12,10 @@ __pycache__/
 data/*.duckdb
 data/*.duckdb.wal
 
+# Estado local do app (cache de respostas e dashboard)
+data/answer_cache.json
+data/dashboard.json
+
 # Exportações geradas pelo agente
 data/exports/*
 !data/exports/.gitkeep

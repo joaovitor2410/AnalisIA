@@ -83,6 +83,14 @@ def distinct_values(con: duckdb.DuckDBPyConnection, table: str, column: str) -> 
     return values or ""
 
 
+def column_doc(glossary: Glossary, table: str, column: str) -> ColumnDoc:
+    """Documentação da coluna; vazia se o glossário não a descrever."""
+    table_doc = glossary.tables.get(table)
+    if table_doc is None:
+        return ColumnDoc(description="")
+    return table_doc.columns.get(column, ColumnDoc(description=""))
+
+
 def labeled(label: str, text: str) -> str:
     return f"{label}: {text}" if text else label
 
@@ -94,9 +102,9 @@ def render_context(glossary: Glossary, con: duckdb.DuckDBPyConnection) -> str:
         doc = glossary.tables.get(table, TableDoc(description=""))
         lines.append("\n" + labeled(f"{RAW_SCHEMA}.{table}", doc.description))
         for column, data_type in columns:
-            column_doc = doc.columns.get(column, ColumnDoc(description=""))
-            line = labeled(f"  - {column} {data_type}", column_doc.description)
-            if column_doc.list_values:
+            documented = column_doc(glossary, table, column)
+            line = labeled(f"  - {column} {data_type}", documented.description)
+            if documented.list_values:
                 line += f" Valores: {distinct_values(con, table, column)}."
             lines.append(line)
 

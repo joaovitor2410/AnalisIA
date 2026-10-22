@@ -39,9 +39,20 @@ class Settings(BaseSettings):
     exports_dir: Path = Path("data/exports")
     workspace_path: Path = Path("data/workspace.duckdb")
     glossary_path: Path = Path("semantic/glossary.toml")
+    answer_cache_path: Path = Path("data/answer_cache.json")
+    dashboard_path: Path = Path("data/dashboard.json")
+    # Perguntas que vão ao modelo por sessão do app (respostas do cache não contam).
+    # Vazio = sem limite (uso local); numa demo pública, protege a cota do nível gratuito.
+    olheiro_session_question_limit: int | None = None
 
     @field_validator(
-        "duckdb_path", "raw_data_dir", "exports_dir", "workspace_path", "glossary_path"
+        "duckdb_path",
+        "raw_data_dir",
+        "exports_dir",
+        "workspace_path",
+        "glossary_path",
+        "answer_cache_path",
+        "dashboard_path",
     )
     @classmethod
     def _resolve_from_root(cls, path: Path) -> Path:

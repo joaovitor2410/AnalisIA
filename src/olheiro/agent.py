@@ -11,8 +11,6 @@ Se o modelo pedir save_result, a execução pausa (PendingApproval) até o usuá
 """
 
 from dataclasses import dataclass, field
-from numbers import Number
-from typing import Literal
 
 import duckdb
 from pydantic import BaseModel, Field, SecretStr
@@ -25,7 +23,7 @@ from pydantic_ai import (
     RunContext,
     ToolDenied,
 )
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import ModelMessage, RetryPromptPart, ToolCallPart
 from pydantic_ai.models import Model
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.google import GoogleModel
@@ -35,6 +33,7 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
 from olheiro import tools
+from olheiro.charts import ChartError, ChartSpec, check_chart
 from olheiro.config import Settings
 from olheiro.semantic import Glossary, render_context
 from olheiro.sql_guard import UnsafeQueryError, check_query
@@ -47,17 +46,6 @@ class AgentDeps:
 
     con: duckdb.DuckDBPyConnection
     glossary: Glossary = field(default_factory=Glossary)
-
-
-class ChartSpec(BaseModel):
-    """Gráfico sugerido pelo modelo. Os dados vêm do SQL de evidência, não do modelo."""
-
-    kind: Literal["bar", "line"] = Field(
-        description="'bar' para comparar categorias; 'line' para evolução ao longo das temporadas."
-    )
-    x: str = Field(description="Coluna do resultado do SQL de evidência para o eixo X.")
-    y: str = Field(description="Coluna numérica do resultado do SQL de evidência para o eixo Y.")
-    title: str = Field(description="Título curto, em português.")
 
 
 class AnalysisAnswer(BaseModel):
@@ -79,7 +67,10 @@ class AnalysisAnswer(BaseModel):
     )
     chart: ChartSpec | None = Field(
         default=None,
-        description="Gráfico do resultado do SQL, só quando ajudar (comparação ou série temporal).",
+        description=(
+            "Visualização do resultado do SQL, só quando ajudar: comparação, série temporal "
+            "ou KPI (número único em destaque)."
+        ),
     )
 
 
@@ -92,6 +83,7 @@ class AgentReport:
     model_name: str
     usage: RunUsage
     messages: list[ModelMessage]
+    from_cache: bool = False  # resposta guardada: nenhuma requisição ao modelo
 
 
 @dataclass(frozen=True)
@@ -127,6 +119,9 @@ Como trabalhar:
 - Resposta e insights só podem afirmar o que aparece no resultado desse sql. Para afirmar
   posição em um ranking ("melhor ataque", "3º lugar"), calcule-a no próprio sql (ex.:
   RANK() OVER (...)) sobre todos os times da temporada. Um resultado com LIMIT não prova ranking.
+- Ao apontar "o maior" ou "o melhor", confira empates (RANK() = 1) e cite todos os empatados.
+- Quando a resposta for um número único (total, recorde, contagem), sugira chart do tipo
+  'metric' (KPI): y = coluna do número; x = coluna do rótulo, se houver (ex.: o time).
 - Use save_result só quando o usuário pedir para salvar um resultado. O usuário confirma antes
   da gravação; se ele recusar, não tente de novo e entregue a resposta normalmente.
 """
@@ -206,21 +201,11 @@ def validate_evidence(
     except (UnsafeQueryError, duckdb.Error) as error:
         raise ModelRetry(f"O SQL de evidência falhou: {error}. Corrija a consulta.") from error
     if output.chart is not None:
-        check_chart(output.chart, evidence)
+        try:
+            check_chart(output.chart, evidence)
+        except ChartError as error:
+            raise ModelRetry(str(error)) from error
     return output
-
-
-def check_chart(chart: ChartSpec, evidence: QueryResult) -> None:
-    """O gráfico precisa usar colunas do resultado, e o eixo Y precisa ser numérico."""
-    missing = [name for name in (chart.x, chart.y) if name not in evidence.columns]
-    if missing:
-        raise ModelRetry(
-            f"O gráfico usa colunas fora do resultado do SQL: {missing}. "
-            f"Colunas disponíveis: {evidence.columns}."
-        )
-    y_values = evidence.column_values(chart.y)
-    if not all(value is None or isinstance(value, Number) for value in y_values):
-        raise ModelRetry(f"O eixo Y do gráfico ('{chart.y}') precisa ser uma coluna numérica.")
 
 
 def ask(
@@ -250,14 +235,34 @@ def to_outcome(
     if isinstance(output, DeferredToolRequests):
         saves = [SaveRequest(call.tool_call_id, **call.args_as_dict()) for call in output.approvals]
         return PendingApproval(saves=saves, messages=result.all_messages(), usage=usage)
-    evidence = query_rows(deps.con, output.sql) if output.answerable and output.sql else None
-    return AgentReport(
-        output=output,
-        evidence=evidence,
-        model_name=result.response.model_name or "desconhecido",
-        usage=usage,
-        messages=result.all_messages(),
+    return build_report(
+        output, deps.con, result.response.model_name or "desconhecido", usage, result.all_messages()
     )
+
+
+def build_report(
+    output: AnalysisAnswer,
+    con: duckdb.DuckDBPyConnection,
+    model_name: str,
+    usage: RunUsage,
+    messages: list[ModelMessage],
+    from_cache: bool = False,
+) -> AgentReport:
+    """Junta a resposta à evidência reexecutada agora (usado também pelo cache de respostas)."""
+    evidence = query_rows(con, output.sql) if output.answerable and output.sql else None
+    return AgentReport(output, evidence, model_name, usage, messages, from_cache)
+
+
+def describe_steps(messages: list[ModelMessage]) -> list[str]:
+    """Uma linha por chamada de ferramenta e por retentativa: o "como o agente pensou"."""
+    lines = []
+    for message in messages:
+        for part in message.parts:
+            if isinstance(part, ToolCallPart):
+                lines.append(f"→ {part.tool_name}({part.args_as_dict()})")
+            elif isinstance(part, RetryPromptPart):
+                lines.append(f"↻ retentativa: {str(part.content).splitlines()[0][:200]}")
+    return lines
 
 
 # Retentativas (com espera crescente) do SDK em 429/5xx, só no último modelo da cadeia:
