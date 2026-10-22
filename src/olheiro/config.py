@@ -30,12 +30,15 @@ class Settings(BaseSettings):
     )
 
     olheiro_model: str = "google:gemini-3.8-flash"
+    # Usado quando o principal falha na API (ex.: 503 de alta demanda). Vazio = sem fallback.
+    olheiro_fallback_model: str | None = None
     google_api_key: SecretStr | None = None
     anthropic_api_key: SecretStr | None = None
     duckdb_path: Path = Path("data/olheiro.duckdb")
     raw_data_dir: Path = Path("data/raw")
+    exports_dir: Path = Path("data/exports")
 
-    @field_validator("duckdb_path", "raw_data_dir")
+    @field_validator("duckdb_path", "raw_data_dir", "exports_dir")
     @classmethod
     def _resolve_from_root(cls, path: Path) -> Path:
         """Caminhos relativos são relativos à raiz do projeto, não à pasta atual."""

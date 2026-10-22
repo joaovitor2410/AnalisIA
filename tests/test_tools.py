@@ -7,7 +7,13 @@ import duckdb
 import pytest
 
 from olheiro.db import connect
-from olheiro.tools import describe_schema, format_markdown_table, run_sql
+from olheiro.tools import (
+    describe_schema,
+    format_markdown_table,
+    profile_column,
+    query_rows,
+    run_sql,
+)
 
 
 @pytest.fixture
@@ -51,3 +57,21 @@ def test_run_sql_cannot_write_on_read_only_connection(con: duckdb.DuckDBPyConnec
 
 def test_describe_schema_lists_columns_and_types(con: duckdb.DuckDBPyConnection) -> None:
     assert describe_schema(con) == "raw.jogos: id BIGINT, time VARCHAR"
+
+
+def test_query_rows_returns_real_values_and_truncation(con: duckdb.DuckDBPyConnection) -> None:
+    result = query_rows(con, "SELECT id, time FROM raw.jogos ORDER BY id", max_rows=3)
+    assert result.columns == ["id", "time"]
+    assert result.column_values("id") == [0, 1, 2]
+    assert result.truncated is True
+
+
+def test_profile_column_shows_stats_and_values(con: duckdb.DuckDBPyConnection) -> None:
+    output = profile_column(con, "raw.jogos", "time")
+    assert output["result"].startswith("Tipo: VARCHAR")
+    assert "| A | 60 |" in output["result"]
+
+
+def test_profile_column_rejects_unknown_column(con: duckdb.DuckDBPyConnection) -> None:
+    output = profile_column(con, "jogos", "gols")
+    assert "não existe" in output["error"]

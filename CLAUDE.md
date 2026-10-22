@@ -46,14 +46,23 @@ em fases com mentoria. **Primeiro projeto de agentes do autor: explicar conceito
 | Mensagem do modelo entra no histórico sem recriar | Preserva as *thought signatures* que o Gemini exige entre passos. |
 | `run_sql` devolve `{"result"}` ou `{"error"}`, nunca levanta | O modelo lê o erro e corrige o SQL. Tabela markdown, máx. 50 linhas. |
 | Loop recebe `generate` injetado | Testes com modelo falso roteirizado, sem rede nem cota. |
+| F2: 2 ferramentas (`run_sql`, `profile_column`) + schema nas instruções | Com 2 tabelas, `list_tables` só gastaria passos. `profile_column` mostra como os valores estão escritos antes de filtrar. |
+| Saída estruturada `AnalysisAnswer` (answerable, answer, sql, insights, chart) | Recusa honesta vira campo (`answerable=false`), não texto solto. |
+| Evidência reexecutada pelo código | O validador roda o `sql` citado (falhou → `ModelRetry`); `ask()` reexecuta para a tabela. Números exibidos vêm do banco, nunca do texto do LLM. |
+| Gráfico = `ChartSpec` na saída, renderizado pelo código (Plotly → HTML em `data/exports/`) | O modelo escolhe tipo/colunas; os dados vêm da evidência. Validador exige colunas existentes e Y numérico. Streamlit (F4) reaproveita a mesma figura. |
+| Insights só podem afirmar o que está no resultado do `sql` | Teste real: o modelo inventou "3º melhor ataque"/"2ª melhor defesa" a partir de um `LIMIT 5` (ambos errados). Regra nas instruções → passou a calcular `RANK() OVER` no SQL. |
+| `FallbackModel` (`OLHEIRO_FALLBACK_MODEL`) + `request_timeout=60s` | 503 ou requisição pendurada caem para o modelo reserva. Sem timeout, uma chamada travou >5 min. |
+| Modelo construído com chave explícita (`GoogleProvider(api_key=...)`) | Sem a chave, o provider leria `os.environ`; mantém a regra "só Settings". |
 
 Versões verificadas em 2026-10-19: duckdb 1.5.6, pydantic-settings 2.16.0, pytest 9.1.1,
-ruff 0.17.1, uv 0.13.1, pydantic-ai-slim 2.57.0 (Fase 2), google-genai 2.31.0 (instalado na F1).
+ruff 0.17.1, uv 0.13.1, google-genai 2.31.0 (F1). Em 2026-10-21: pydantic-ai-slim 2.59.0,
+plotly 7.1.0 (F2). Na 2.59, `result.usage` é propriedade (não método); o banner some com
+`pydantic_ai.BANNER_ENABLED = False`.
 Pydantic AI + Gemini: extra `pydantic-ai-slim[google]`, prefixo `google:`, chave em
 `GOOGLE_API_KEY` (docs: https://pydantic.dev/docs/ai/models/google/). Modelo Flash estável
 atual: `gemini-3.8-flash` (a chave tem acesso; em 2026-10-20 deu 503 "high demand" repetidas
-vezes, assim como o 3.7). O `gemini-3.5-flash` respondeu: para testar sem mexer no `.env`, use
-`OLHEIRO_MODEL=google:gemini-3.5-flash uv run ...`.
+vezes, assim como o 3.7; em 2026-10-21 respondeu normalmente). Reserva: `gemini-3.5-flash`,
+configurado em `OLHEIRO_FALLBACK_MODEL` (o `.env` do autor já tem).
 
 Rede/sandbox (2026-10-20): o IPv6 do Wi-Fi do autor está quebrado e o `uv` não cai para IPv4.
 Para instalar pacotes: `networksetup -setv6off Wi-Fi`, depois `uv add ...`, depois
@@ -65,7 +74,10 @@ Claude Code.
 src/olheiro/config.py       configurações (Settings)
 src/olheiro/db.py           conexão DuckDB + carga de CSVs (comando olheiro-load)
 src/olheiro/check_setup.py  diagnóstico do ambiente (comando olheiro-check)
-src/olheiro/tools.py        ferramentas do agente: run_sql, describe_schema
+src/olheiro/tools.py        execução de SQL (query_rows) e ferramentas: run_sql, profile_column
+src/olheiro/agent.py        agente Pydantic AI: saída estruturada, validador, ask(), build_model()
+src/olheiro/charts.py       ChartSpec + evidência -> figura Plotly (HTML)
+src/olheiro/cli.py          comando olheiro-ask
 learning/manual_loop.py     F1: loop do agente à mão com google-genai (material de estudo)
 tests/                      pytest (pythonpath inclui learning/)
 data/raw/                   CSVs de entrada
@@ -88,7 +100,11 @@ Pastas futuras: `semantic/` (F3), `evals/` (F5).
 - [x] **Fase 1: loop "na mão".** `learning/manual_loop.py` + `olheiro.tools.run_sql`, 16 testes.
   Testado com o Gemini real: pergunta simples ok; pergunta com JOIN fez 2 passos (explorou e
   depois cruzou tabelas). Rodar: `uv run python learning/manual_loop.py "pergunta"`.
-- [ ] Fase 2: agente Pydantic AI (ferramentas 1–4, saída estruturada, CLI)
+- [x] **Fase 2: agente Pydantic AI.** 2 ferramentas, saída estruturada validada, evidência
+  reexecutada, gráfico Plotly, fallback + timeout, CLI `olheiro-ask`. 32 testes (FunctionModel).
+  Testado com o Gemini real: pergunta simples, ranking (RANK/QUALIFY), série com gráfico (7
+  requisições) e recusa (artilheiro → `answerable=false`).
+  Rodar: `uv run olheiro-ask [--verbose] "pergunta"`.
 - [ ] Fase 3: segurança e contexto (sqlglot, read-only, glossário, save_result com confirmação)
 - [ ] Fase 4: Streamlit
 - [ ] Fase 5: evals (30+ perguntas, 2 modelos)
@@ -100,6 +116,11 @@ Pastas futuras: `semantic/` (F3), `evals/` (F5).
 - **Segurança (Fase 3):** a conexão read-only protege o banco, mas não o disco. Testado:
   `read_csv('/etc/hosts')` lê arquivos arbitrários e `COPY ... TO` grava arquivos. Corrigir com
   `enable_external_access=false` na conexão do agente + validação com sqlglot (só SELECT).
-- Ainda não testado com o Gemini real: pergunta que os dados não respondem (ex.: artilheiro).
+- **Evals (Fase 5):** a regra "insight só com base no resultado do SQL" é só instrução; medir
+  se os insights batem com a evidência (ex.: LLM-juiz comparando insight × tabela).
+- **Latência/custo (Fase 6):** pergunta com gráfico levou 7 requisições (~19k tokens); recusa
+  levou ~55 s. Observar por passo.
+- Aviso `DeprecationWarning: There is no current event loop` vem do `pydantic_graph` no
+  `run_sync` (interno da biblioteca, não do nosso código).
 - Decidir se os CSVs do dataset vão para o Git (necessário para o deploy da Fase 8; checar licença
   da fonte).
