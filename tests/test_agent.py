@@ -152,6 +152,8 @@ def test_build_model_with_fallback() -> None:
     model = build_model(settings)
     assert isinstance(model, FallbackModel)
     assert [m.model_name for m in model.models] == ["gemini-3.8-flash", "gemini-3.5-flash"]
+    # Principal falha na hora (o fallback entra sem atraso); só o reserva tem retentativas.
+    assert [m.settings["max_retries"] for m in model.models] == [0, 2]
 
 
 @pytest.mark.parametrize(

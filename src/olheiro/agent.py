@@ -180,20 +180,31 @@ def ask(question: str, con: duckdb.DuckDBPyConnection, model: Model | None = Non
     )
 
 
+# Retentativas (com espera crescente) do SDK em 429/5xx, só no último modelo da cadeia:
+# o principal falha na hora para o fallback entrar sem atraso; o reserva insiste antes de desistir.
+LAST_MODEL_RETRIES = 2
+
+
 def build_model(settings: Settings) -> Model:
-    """Monta o modelo do .env, com fallback opcional (ex.: quando o principal dá 503)."""
-    primary = google_model(settings.olheiro_model, settings.google_api_key)
+    """Monta o modelo do .env, com fallback opcional (ex.: principal sem cota ou com 503)."""
     if settings.olheiro_fallback_model is None:
-        return primary
-    fallback = google_model(settings.olheiro_fallback_model, settings.google_api_key)
+        return google_model(settings.olheiro_model, settings.google_api_key, LAST_MODEL_RETRIES)
+    primary = google_model(settings.olheiro_model, settings.google_api_key, retries=0)
+    fallback = google_model(
+        settings.olheiro_fallback_model, settings.google_api_key, LAST_MODEL_RETRIES
+    )
     return FallbackModel(primary, fallback)
 
 
-def google_model(model_id: str, api_key: SecretStr | None) -> GoogleModel:
+def google_model(model_id: str, api_key: SecretStr | None, retries: int) -> GoogleModel:
     """'google:gemini-3.8-flash' -> GoogleModel com a chave passada explicitamente."""
     provider, _, name = model_id.partition(":")
     if provider != "google":
         raise ValueError(f"Provedor '{provider}' ainda não suportado (Claude entra na Fase 5).")
     if api_key is None:
         raise ValueError("GOOGLE_API_KEY não definida no .env.")
-    return GoogleModel(name, provider=GoogleProvider(api_key=api_key.get_secret_value()))
+    return GoogleModel(
+        name,
+        provider=GoogleProvider(api_key=api_key.get_secret_value()),
+        settings=ModelSettings(max_retries=retries),
+    )

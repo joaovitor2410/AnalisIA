@@ -17,6 +17,7 @@ from olheiro.agent import AgentReport, ask, build_model
 from olheiro.charts import build_figure, save_figure
 from olheiro.config import get_settings
 from olheiro.db import connect
+from olheiro.errors import explain_model_failure
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -75,7 +76,7 @@ def main(argv: list[str] | None = None) -> None:
             report = ask(args.question, con, model)
         except (AgentRunError, FallbackExceptionGroup) as error:
             # Falha da API (cota, 503 em todos os modelos) ou modelo que esgotou as retentativas.
-            sys.exit(f"Erro ao consultar o modelo: {error}")
+            sys.exit(f"Erro ao consultar o modelo. {explain_model_failure(error)}")
 
     chart_path = None
     if report.output.chart is not None and report.evidence is not None:
