@@ -1,29 +1,43 @@
 """O agente analista: ferramentas, saída estruturada e validação da evidência (Pydantic AI).
 
 Fluxo de uma pergunta:
-    1. O modelo consulta os dados com as ferramentas (run_sql, profile_column).
+    1. O modelo recebe o contexto (glossário + catálogo) e consulta os dados com as ferramentas.
     2. Entrega um AnalysisAnswer: resposta, SQL de evidência, insights e gráfico sugerido.
     3. O validador reexecuta o SQL de evidência; se falhar, ModelRetry devolve o erro ao modelo.
     4. `ask` reexecuta o SQL para a tabela: os números mostrados vêm do banco, não do LLM.
+
+Se o modelo pedir save_result, a execução pausa (PendingApproval) até o usuário decidir;
+`resume` continua de onde parou com a decisão.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from numbers import Number
 from typing import Literal
 
 import duckdb
 from pydantic import BaseModel, Field, SecretStr
-from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai import (
+    Agent,
+    ApprovalRequired,
+    DeferredToolRequests,
+    DeferredToolResults,
+    ModelRetry,
+    RunContext,
+    ToolDenied,
+)
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models import Model
 from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
+from pydantic_ai.run import AgentRunResult
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RunUsage
 
 from olheiro import tools
 from olheiro.config import Settings
+from olheiro.semantic import Glossary, render_context
+from olheiro.sql_guard import UnsafeQueryError, check_query
 from olheiro.tools import QueryResult, query_rows
 
 
@@ -32,6 +46,7 @@ class AgentDeps:
     """Dependências de uma execução: o que as ferramentas e o validador acessam via ctx.deps."""
 
     con: duckdb.DuckDBPyConnection
+    glossary: Glossary = field(default_factory=Glossary)
 
 
 class ChartSpec(BaseModel):
@@ -79,21 +94,41 @@ class AgentReport:
     messages: list[ModelMessage]
 
 
+@dataclass(frozen=True)
+class SaveRequest:
+    """Um pedido do modelo para gravar o resultado de `query` em workspace.<name>."""
+
+    tool_call_id: str
+    name: str
+    query: str
+
+
+@dataclass(frozen=True)
+class PendingApproval:
+    """O agente pausou esperando o usuário aprovar (ou não) os pedidos de gravação."""
+
+    saves: list[SaveRequest]
+    messages: list[ModelMessage]  # histórico para retomar exatamente de onde parou
+    usage: RunUsage
+
+
 INSTRUCTIONS = """\
 Você é o Olheiro, um analista de dados. Responda sempre em português do Brasil.
 
 Como trabalhar:
 - Responda só com base nos dados do banco DuckDB, consultados com as ferramentas.
 - Use o dialeto DuckDB e qualifique as tabelas com o schema (ex.: raw.teams).
-- Antes de filtrar por um texto (nome de time, estado, região), use profile_column para ver
-  como os valores estão escritos.
-- Se uma consulta der erro, leia a mensagem e corrija.
+- Siga as regras de negócio do contexto abaixo. Os valores listados no contexto são os exatos;
+  para filtrar por outra coluna de texto, use profile_column antes.
+- Se uma consulta der erro ou for recusada, leia a mensagem e corrija.
 - Se os dados não permitirem responder, marque answerable=false e explique o que falta.
   Nunca invente números.
 - O campo sql deve conter uma única consulta que reproduza a evidência da resposta.
 - Resposta e insights só podem afirmar o que aparece no resultado desse sql. Para afirmar
   posição em um ranking ("melhor ataque", "3º lugar"), calcule-a no próprio sql (ex.:
   RANK() OVER (...)) sobre todos os times da temporada. Um resultado com LIMIT não prova ranking.
+- Use save_result só quando o usuário pedir para salvar um resultado. O usuário confirma antes
+  da gravação; se ele recusar, não tente de novo e entregue a resposta normalmente.
 """
 
 # Prazo de cada requisição ao modelo. Sem ele, uma chamada pendurada trava a CLI para sempre;
@@ -101,8 +136,9 @@ Como trabalhar:
 REQUEST_TIMEOUT_SECONDS = 60
 
 # O modelo não é fixado aqui: vem do .env na hora de rodar (ou de um modelo falso nos testes).
+# DeferredToolRequests na saída permite pausar a execução para pedir aprovação ao usuário.
 agent = Agent(
-    output_type=AnalysisAnswer,
+    output_type=[AnalysisAnswer, DeferredToolRequests],
     deps_type=AgentDeps,
     instructions=INSTRUCTIONS,
     retries=2,
@@ -111,9 +147,9 @@ agent = Agent(
 
 
 @agent.instructions
-def schema_instructions(ctx: RunContext[AgentDeps]) -> str:
-    """Instrução dinâmica: o schema é lido do banco a cada execução, nunca fica desatualizado."""
-    return "Tabelas disponíveis (tabela: coluna tipo, ...):\n" + tools.describe_schema(ctx.deps.con)
+def data_context(ctx: RunContext[AgentDeps]) -> str:
+    """Instrução dinâmica: glossário + catálogo lidos a cada passo (inclui tabelas recém-salvas)."""
+    return render_context(ctx.deps.glossary, ctx.deps.con)
 
 
 @agent.tool
@@ -137,16 +173,37 @@ def profile_column(ctx: RunContext[AgentDeps], table: str, column: str) -> dict[
     return tools.profile_column(ctx.deps.con, table, column)
 
 
+@agent.tool
+def save_result(ctx: RunContext[AgentDeps], name: str, query: str) -> dict[str, str]:
+    """Salva o resultado de uma consulta como tabela em workspace. O usuário precisa aprovar.
+
+    Args:
+        name: Nome da nova tabela, em snake_case (ex.: campeoes_por_temporada).
+        query: Consulta SELECT cujo resultado será salvo.
+    """
+    if not ctx.tool_call_approved:
+        # 1ª passagem: valida antes de incomodar o usuário; só pede aprovação se der para gravar.
+        try:
+            tools.check_save_request(ctx.deps.con, name, query)
+        except UnsafeQueryError as error:
+            return {"error": f"Pedido recusado: {error}"}
+        raise ApprovalRequired()
+    return tools.save_result(ctx.deps.con, name, query)
+
+
 @agent.output_validator
-def validate_evidence(ctx: RunContext[AgentDeps], output: AnalysisAnswer) -> AnalysisAnswer:
+def validate_evidence(
+    ctx: RunContext[AgentDeps], output: AnalysisAnswer | DeferredToolRequests
+) -> AnalysisAnswer | DeferredToolRequests:
     """Só aceita a resposta se a evidência se sustenta; senão o modelo recebe o motivo e corrige."""
-    if not output.answerable:
+    if isinstance(output, DeferredToolRequests) or not output.answerable:
         return output
     if output.sql is None:
         raise ModelRetry("Resposta sem evidência: preencha `sql` com a consulta que a sustenta.")
     try:
+        check_query(output.sql)
         evidence = query_rows(ctx.deps.con, output.sql)
-    except duckdb.Error as error:
+    except (UnsafeQueryError, duckdb.Error) as error:
         raise ModelRetry(f"O SQL de evidência falhou: {error}. Corrija a consulta.") from error
     if output.chart is not None:
         check_chart(output.chart, evidence)
@@ -166,16 +223,39 @@ def check_chart(chart: ChartSpec, evidence: QueryResult) -> None:
         raise ModelRetry(f"O eixo Y do gráfico ('{chart.y}') precisa ser uma coluna numérica.")
 
 
-def ask(question: str, con: duckdb.DuckDBPyConnection, model: Model | None = None) -> AgentReport:
-    """Faz uma pergunta ao agente e devolve a resposta com a evidência reexecutada."""
-    result = agent.run_sync(question, deps=AgentDeps(con), model=model)
+def ask(
+    question: str, deps: AgentDeps, model: Model | None = None
+) -> AgentReport | PendingApproval:
+    """Faz uma pergunta. Devolve a resposta com evidência, ou uma pausa para aprovação."""
+    result = agent.run_sync(question, deps=deps, model=model)
+    return to_outcome(result, deps, result.usage)
+
+
+def resume(
+    pending: PendingApproval, approved: bool, deps: AgentDeps, model: Model | None = None
+) -> AgentReport | PendingApproval:
+    """Retoma uma execução pausada com a decisão do usuário sobre os pedidos de gravação."""
+    decision = True if approved else ToolDenied("O usuário não autorizou a gravação.")
+    results = DeferredToolResults(approvals={save.tool_call_id: decision for save in pending.saves})
+    result = agent.run_sync(
+        message_history=pending.messages, deferred_tool_results=results, deps=deps, model=model
+    )
+    return to_outcome(result, deps, pending.usage + result.usage)
+
+
+def to_outcome(
+    result: AgentRunResult[AnalysisAnswer | DeferredToolRequests], deps: AgentDeps, usage: RunUsage
+) -> AgentReport | PendingApproval:
     output = result.output
-    evidence = query_rows(con, output.sql) if output.answerable and output.sql else None
+    if isinstance(output, DeferredToolRequests):
+        saves = [SaveRequest(call.tool_call_id, **call.args_as_dict()) for call in output.approvals]
+        return PendingApproval(saves=saves, messages=result.all_messages(), usage=usage)
+    evidence = query_rows(deps.con, output.sql) if output.answerable and output.sql else None
     return AgentReport(
         output=output,
         evidence=evidence,
         model_name=result.response.model_name or "desconhecido",
-        usage=result.usage,
+        usage=usage,
         messages=result.all_messages(),
     )
 

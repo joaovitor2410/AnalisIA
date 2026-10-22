@@ -1,0 +1,44 @@
+# Glossário do Olheiro: o que cada tabela e coluna significa e as regras do negócio.
+# Vai para as instruções do agente. Um teste garante que ele cobre todas as colunas do banco
+# e não cita nenhuma que não exista. list_values = true lista os valores reais da coluna
+# (lidos do banco) para o modelo filtrar com o texto exato, sem gastar uma chamada de ferramenta.
+
+rules = [
+  "Campeão de uma temporada: place = 1. Vice-campeão: place = 2.",
+  "O formato mudou: 2003–2004 com 24 times (46 jogos), 2005 com 22 (42 jogos) e desde 2006 com 20 (38 jogos). Para comparar temporadas, use aproveitamento = points / (played * 3), não pontos, vitórias ou gols absolutos.",
+  "points é a pontuação oficial, já com punições: em 11 linhas (temporadas 2003, 2004, 2010 e 2013) ela difere de 3 * won + draw. Use sempre points.",
+  "Desde 2006, os 4 últimos colocados (place >= 17) são rebaixados. Em 2003–2005 o número variou e não está nos dados: não afirme rebaixamento nesses anos.",
+  "Vagas em Libertadores e Sul-Americana variam por ano e não estão nos dados: não deduza classificação a torneios pela posição.",
+  "Grêmio Barueri aparece em raw.brasileirao (2010) mas não em raw.teams. Ao juntar as tabelas por team, use LEFT JOIN e diga quando um time ficar sem cadastro.",
+  "region está em inglês; na resposta, traduza: Southeast = Sudeste, South = Sul, Northeast = Nordeste, North = Norte, Central = Centro-Oeste.",
+  "Não há dados por jogo, rodada, jogador (artilharia, cartões), técnico, público ou finanças: perguntas sobre isso têm answerable = false.",
+]
+
+[tables.brasileirao]
+description = "Classificação final de cada time em cada temporada da Série A (2003–2024). Uma linha por time e temporada."
+
+[tables.brasileirao.columns]
+season = "Ano da temporada."
+place = "Posição final na tabela (1 = campeão)."
+team = { description = "Nome do time.", list_values = true }
+points = "Pontos oficiais na temporada (já com punições)."
+played = "Jogos disputados."
+won = "Vitórias."
+draw = "Empates."
+loss = "Derrotas."
+goals = "Gols marcados."
+goals_taken = "Gols sofridos."
+goals_diff = "Saldo de gols (goals - goals_taken)."
+
+[tables.teams]
+description = "Cadastro dos times: uma linha por time."
+
+[tables.teams.columns]
+team = "Nome do time, igual ao de raw.brasileirao.team (chave de junção)."
+acronym = "Sigla do time."
+full_name = "Nome oficial do clube."
+founded = "Ano de fundação."
+stadium = "Estádio principal."
+city = "Cidade."
+state = { description = "Estado, por extenso.", list_values = true }
+region = { description = "Região do Brasil, em inglês.", list_values = true }

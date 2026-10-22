@@ -1,8 +1,9 @@
-"""Acesso ao DuckDB e carga dos CSVs brutos.
+"""Acesso ao DuckDB: carga dos CSVs brutos e a conexão blindada do agente.
 
-Organização do banco:
-- schema "raw": uma tabela por CSV de data/raw/. Dados brutos, nunca alterados pelo agente.
-- schema "workspace": onde o agente poderá criar tabelas/views (a partir da Fase 3).
+Organização:
+- data/olheiro.duckdb, schema "raw": uma tabela por CSV de data/raw/. O agente só lê.
+- data/workspace.duckdb, anexado como "workspace": único lugar onde o agente grava
+  (via save_result, com confirmação do usuário).
 """
 
 import re
@@ -16,7 +17,20 @@ import duckdb
 from olheiro.config import get_settings
 
 RAW_SCHEMA = "raw"
-WORKSPACE_SCHEMA = "workspace"
+# Nome com que o banco de trabalho é anexado: tabelas salvas viram workspace.<nome>.
+WORKSPACE_CATALOG = "workspace"
+# Nome com que o banco principal é anexado na conexão do agente.
+LAKE_CATALOG = "lake"
+
+# Camada 2 da defesa (a 1 é o validador de SQL): mesmo que um SQL perigoso passe, o motor recusa.
+# A ordem importa: lock_configuration por último, senão nada mais pode ser configurado.
+AGENT_HARDENING = (
+    "SET enable_external_access = false",  # sem read_csv/COPY/ATTACH de arquivos, sem rede
+    "SET autoinstall_known_extensions = false",
+    "SET autoload_known_extensions = false",
+    "SET memory_limit = '1GB'",
+    "SET lock_configuration = true",  # ninguém (nem o SQL do agente) desfaz o que está acima
+)
 
 
 @dataclass(frozen=True)
@@ -48,6 +62,21 @@ def connect(db_path: Path, read_only: bool = False) -> duckdb.DuckDBPyConnection
     return duckdb.connect(str(db_path), read_only=read_only)
 
 
+def connect_agent(db_path: Path, workspace_path: Path) -> duckdb.DuckDBPyConnection:
+    """Conexão que o agente usa: raw somente leitura, workspace gravável, motor blindado.
+
+    O banco principal é anexado com READ_ONLY: escrever em raw falha no próprio DuckDB.
+    """
+    workspace_path.parent.mkdir(parents=True, exist_ok=True)
+    con = duckdb.connect(":memory:")
+    con.execute(f"ATTACH '{db_path}' AS {LAKE_CATALOG} (READ_ONLY)")
+    con.execute(f"USE {LAKE_CATALOG}")  # "raw.teams" resolve sem prefixar o catálogo
+    con.execute(f"ATTACH '{workspace_path}' AS {WORKSPACE_CATALOG}")
+    for statement in AGENT_HARDENING:
+        con.execute(statement)
+    return con
+
+
 def find_csv_files(raw_dir: Path) -> list[Path]:
     """Lista os CSVs da pasta de dados brutos, em ordem alfabética."""
     return sorted(raw_dir.glob("*.csv"))
@@ -75,7 +104,9 @@ def load_raw_dir(con: duckdb.DuckDBPyConnection, raw_dir: Path) -> list[LoadedTa
     try:
         con.execute(f"DROP SCHEMA IF EXISTS {RAW_SCHEMA} CASCADE")
         con.execute(f"CREATE SCHEMA {RAW_SCHEMA}")
-        con.execute(f"CREATE SCHEMA IF NOT EXISTS {WORKSPACE_SCHEMA}")
+        # Até a Fase 2 havia um schema "workspace" vazio aqui; ele colidiria com o catálogo
+        # "workspace" anexado na conexão do agente (referência ambígua).
+        con.execute(f"DROP SCHEMA IF EXISTS {WORKSPACE_CATALOG} CASCADE")
         loaded = [load_csv(con, path) for path in find_csv_files(raw_dir)]
         con.execute("COMMIT")
     except Exception:

@@ -17,9 +17,9 @@ from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.google import GoogleModel
 
-from olheiro.agent import ask, build_model
+from olheiro.agent import AgentDeps, AgentReport, PendingApproval, ask, build_model, resume
 from olheiro.config import Settings
-from olheiro.db import connect
+from olheiro.db import connect, connect_agent
 
 # Qualquer chamada acidental a um modelo de verdade falha o teste.
 models.ALLOW_MODEL_REQUESTS = False
@@ -41,8 +41,9 @@ def con(tmp_path: Path) -> Iterator[duckdb.DuckDBPyConnection]:
                                   (2020, 1, 'Flamengo', 71)) AS t(season, place, team, points)
             """
         )
-    with connect(db_path, read_only=True) as read_only_con:
-        yield read_only_con
+    # A mesma conexão blindada da CLI: raw somente leitura, workspace gravável.
+    with connect_agent(db_path, tmp_path / "workspace.duckdb") as agent_con:
+        yield agent_con
 
 
 class ScriptedModel:
@@ -60,8 +61,8 @@ class ScriptedModel:
         return FunctionModel(self)
 
 
-def call_tool(name: str, **args: object) -> Step:
-    return lambda info: ModelResponse(parts=[ToolCallPart(name, args)])
+def call_tool(tool_name: str, /, **args: object) -> Step:
+    return lambda info: ModelResponse(parts=[ToolCallPart(tool_name, args)])
 
 
 def answer(**fields: object) -> Step:
@@ -80,7 +81,7 @@ def test_answer_uses_tools_and_reexecutes_evidence(con: duckdb.DuckDBPyConnectio
         answer(answerable=True, answer="Flamengo.", sql=CHAMPIONS_SQL, chart=chart),
     )
 
-    report = ask("Quem foram os campeões?", con, script.model())
+    report = ask("Quem foram os campeões?", AgentDeps(con), script.model())
 
     tool_result = parts_of(script.received[1], ToolReturnPart)[0].content
     assert "Flamengo" in tool_result["result"]
@@ -118,7 +119,7 @@ def test_invalid_evidence_makes_the_model_retry(
         answer(answerable=True, answer="x", sql=CHAMPIONS_SQL),
     )
 
-    report = ask("pergunta", con, script.model())
+    report = ask("pergunta", AgentDeps(con), script.model())
 
     retries = parts_of(script.received[1], RetryPromptPart)
     assert expected_retry in str(retries[0].content)
@@ -128,7 +129,7 @@ def test_invalid_evidence_makes_the_model_retry(
 def test_unanswerable_question_returns_without_evidence(con: duckdb.DuckDBPyConnection) -> None:
     script = ScriptedModel(answer(answerable=False, answer="Não há dados de artilharia."))
 
-    report = ask("Quem foi o artilheiro de 2019?", con, script.model())
+    report = ask("Quem foi o artilheiro de 2019?", AgentDeps(con), script.model())
 
     assert report.output.answerable is False
     assert report.evidence is None
@@ -169,3 +170,82 @@ def test_build_model_rejects_invalid_config(
     settings = Settings(_env_file=None, olheiro_model=model_id, google_api_key=api_key)
     with pytest.raises(ValueError, match=message):
         build_model(settings)
+
+
+def report_of(outcome: AgentReport | PendingApproval) -> AgentReport:
+    assert isinstance(outcome, AgentReport)
+    return outcome
+
+
+def saved_tables(con: duckdb.DuckDBPyConnection) -> list[str]:
+    rows = con.execute(
+        "SELECT table_name FROM duckdb_tables() WHERE database_name = 'workspace'"
+    ).fetchall()
+    return [name for (name,) in rows]
+
+
+def test_save_result_pauses_for_approval_and_writes_when_approved(
+    con: duckdb.DuckDBPyConnection,
+) -> None:
+    script = ScriptedModel(
+        call_tool("save_result", name="campeoes", query=CHAMPIONS_SQL),
+        answer(answerable=True, answer="Salvei.", sql="SELECT * FROM workspace.campeoes"),
+    )
+    deps = AgentDeps(con)
+
+    pending = ask("Salve os campeões", deps, script.model())
+
+    assert isinstance(pending, PendingApproval)
+    assert [(s.name, s.query) for s in pending.saves] == [("campeoes", CHAMPIONS_SQL)]
+    assert saved_tables(con) == []  # nada é gravado antes da decisão do usuário
+
+    report = report_of(resume(pending, approved=True, deps=deps, model=script.model()))
+
+    assert saved_tables(con) == ["campeoes"]
+    assert report.evidence is not None and report.evidence.rows == [(2019, 90), (2020, 71)]
+
+
+def test_denied_save_writes_nothing_and_tells_the_model(con: duckdb.DuckDBPyConnection) -> None:
+    script = ScriptedModel(
+        call_tool("save_result", name="campeoes", query=CHAMPIONS_SQL),
+        answer(answerable=True, answer="Ok, não salvei.", sql=CHAMPIONS_SQL),
+    )
+    deps = AgentDeps(con)
+
+    pending = ask("Salve os campeões", deps, script.model())
+    assert isinstance(pending, PendingApproval)
+    report_of(resume(pending, approved=False, deps=deps, model=script.model()))
+
+    assert saved_tables(con) == []
+    denial = parts_of(script.received[1], ToolReturnPart)[-1].content
+    assert "não autorizou" in str(denial)
+
+
+def test_invalid_save_request_is_refused_without_asking_the_user(
+    con: duckdb.DuckDBPyConnection,
+) -> None:
+    script = ScriptedModel(
+        call_tool("save_result", name="Campeões!", query="DROP TABLE raw.brasileirao"),
+        answer(answerable=True, answer="x", sql=CHAMPIONS_SQL),
+    )
+
+    outcome = ask("Salve", AgentDeps(con), script.model())
+
+    assert isinstance(outcome, AgentReport)  # não pausou: não havia o que aprovar
+    refusal = parts_of(script.received[1], ToolReturnPart)[0].content
+    assert "Nome 'Campeões!' inválido" in refusal["error"]
+
+
+def test_destructive_sql_from_the_model_is_refused_and_raw_stays_intact(
+    con: duckdb.DuckDBPyConnection,
+) -> None:
+    script = ScriptedModel(
+        call_tool("run_sql", query="DROP TABLE raw.brasileirao"),
+        answer(answerable=True, answer="x", sql=CHAMPIONS_SQL),
+    )
+
+    ask("Apague a tabela", AgentDeps(con), script.model())
+
+    refusal = parts_of(script.received[1], ToolReturnPart)[0].content
+    assert refusal["error"].startswith("Consulta recusada")
+    assert con.execute("SELECT count(*) FROM raw.brasileirao").fetchone()[0] == 3

@@ -1,18 +1,27 @@
 """Ferramentas que o agente pode chamar, e a execução de SQL por trás delas.
 
-As ferramentas (`run_sql`, `profile_column`) devolvem um dict com a chave "result" (sucesso) ou
-"error" (falha). Erros não viram exceção: voltam como texto para o modelo ler e corrigir a consulta.
-`query_rows` é a execução crua, usada também para reexecutar o SQL de evidência.
+As ferramentas (`run_sql`, `profile_column`, `save_result`) devolvem um dict com a chave "result"
+(sucesso) ou "error" (falha). Erros não viram exceção: voltam como texto para o modelo corrigir.
+`query_rows` é a execução crua (com prazo), usada também para reexecutar o SQL de evidência.
 """
 
+import re
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import duckdb
 
-from olheiro.db import RAW_SCHEMA
+from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG
+from olheiro.sql_guard import UnsafeQueryError, check_query
 
 # Mais que isso enche o contexto do modelo sem ajudar a responder; ele deve agregar ou usar LIMIT.
 MAX_ROWS = 50
+# O DuckDB não tem timeout de consulta: a aplicação interrompe (recomendação da doc de segurança).
+QUERY_TIMEOUT_SECONDS = 10
+# Nome de tabela salva: snake_case simples, então pode ir direto no SQL sem risco de injeção.
+TABLE_NAME = re.compile(r"[a-z][a-z0-9_]{0,62}")
 
 
 @dataclass(frozen=True)
@@ -50,25 +59,51 @@ def format_markdown_table(columns: list[str], rows: list[tuple[object, ...]]) ->
     return "\n".join([header, separator, *body])
 
 
-def query_rows(con: duckdb.DuckDBPyConnection, query: str, max_rows: int = MAX_ROWS) -> QueryResult:
-    """Executa uma consulta e devolve até `max_rows` linhas. Levanta duckdb.Error se falhar."""
-    con.execute(query)
-    if con.description is None:
-        return QueryResult(columns=[], rows=[])
-    columns = [column[0] for column in con.description]
-    rows = con.fetchmany(max_rows + 1)
+@contextmanager
+def interrupt_after(con: duckdb.DuckDBPyConnection, seconds: float) -> Iterator[None]:
+    """Interrompe o que estiver rodando na conexão se passar de `seconds`."""
+    timer = threading.Timer(seconds, con.interrupt)
+    timer.start()
+    try:
+        yield
+    finally:
+        timer.cancel()
+
+
+def query_rows(
+    con: duckdb.DuckDBPyConnection,
+    query: str,
+    max_rows: int = MAX_ROWS,
+    timeout: float = QUERY_TIMEOUT_SECONDS,
+) -> QueryResult:
+    """Executa uma consulta e devolve até `max_rows` linhas.
+
+    Levanta duckdb.Error se falhar, ou duckdb.InterruptException se passar de `timeout`.
+    """
+    with interrupt_after(con, timeout):
+        con.execute(query)
+        if con.description is None:
+            return QueryResult(columns=[], rows=[])
+        columns = [column[0] for column in con.description]
+        rows = con.fetchmany(max_rows + 1)
     return QueryResult(columns, rows[:max_rows], truncated=len(rows) > max_rows)
 
 
-def run_sql(con: duckdb.DuckDBPyConnection, query: str, max_rows: int = MAX_ROWS) -> dict[str, str]:
-    """Ferramenta: executa uma consulta e devolve o resultado em tabela markdown.
+def describe_db_error(error: duckdb.Error) -> str:
+    if isinstance(error, duckdb.InterruptException):
+        return f"A consulta passou de {QUERY_TIMEOUT_SECONDS} s e foi interrompida: simplifique."
+    return f"{type(error).__name__}: {error}"
 
-    A segurança, por enquanto, vem só da conexão read-only (validação de SQL na Fase 3).
-    """
+
+def run_sql(con: duckdb.DuckDBPyConnection, query: str, max_rows: int = MAX_ROWS) -> dict[str, str]:
+    """Ferramenta: valida e executa uma consulta, devolvendo o resultado em tabela markdown."""
     try:
+        check_query(query)
         result = query_rows(con, query, max_rows)
+    except UnsafeQueryError as error:
+        return {"error": f"Consulta recusada: {error}"}
     except duckdb.Error as error:
-        return {"error": f"{type(error).__name__}: {error}"}
+        return {"error": describe_db_error(error)}
 
     if not result.columns:
         return {"result": "Comando executado, sem linhas de resultado."}
@@ -112,6 +147,36 @@ def profile_column(con: duckdb.DuckDBPyConnection, table: str, column: str) -> d
         "result": f"Tipo: {found[0]}\n{stats.to_markdown()}\n\n"
         f"Valores por frequência:\n{top.to_markdown()}"
     }
+
+
+def check_save_request(con: duckdb.DuckDBPyConnection, name: str, query: str) -> str:
+    """Valida um pedido de save_result antes de pedir aprovação ao usuário.
+
+    Devolve a consulta normalizada (gerada pelo sqlglot, sem comentários nem ';' extras).
+    """
+    if not TABLE_NAME.fullmatch(name):
+        raise UnsafeQueryError(f"Nome '{name}' inválido: use snake_case (ex.: campeoes_2019).")
+    exists = con.execute(
+        "SELECT count(*) FROM duckdb_tables() WHERE database_name = ? AND table_name = ?",
+        [WORKSPACE_CATALOG, name],
+    ).fetchone()[0]
+    if exists:
+        raise UnsafeQueryError(f"{WORKSPACE_CATALOG}.{name} já existe: escolha outro nome.")
+    return check_query(query).sql(dialect="duckdb")
+
+
+def save_result(con: duckdb.DuckDBPyConnection, name: str, query: str) -> dict[str, str]:
+    """Ferramenta (só roda depois da aprovação): grava o resultado em workspace.<name>."""
+    try:
+        safe_query = check_save_request(con, name, query)
+        with interrupt_after(con, QUERY_TIMEOUT_SECONDS):
+            con.execute(f"CREATE TABLE {WORKSPACE_CATALOG}.{name} AS {safe_query}")
+        count = con.execute(f"SELECT count(*) FROM {WORKSPACE_CATALOG}.{name}").fetchone()[0]
+    except UnsafeQueryError as error:
+        return {"error": f"Pedido recusado: {error}"}
+    except duckdb.Error as error:
+        return {"error": describe_db_error(error)}
+    return {"result": f"Tabela {WORKSPACE_CATALOG}.{name} criada com {count} linhas."}
 
 
 def describe_schema(con: duckdb.DuckDBPyConnection) -> str:

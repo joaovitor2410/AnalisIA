@@ -35,7 +35,7 @@ em fases com mentoria. **Primeiro projeto de agentes do autor: explicar conceito
 ## Decisões técnicas
 | Decisão | Motivo |
 |---|---|
-| DuckDB com schemas `raw` e `workspace` | `raw` = dados brutos, recriado do zero a cada `olheiro-load`, nunca alterado pelo agente. `workspace` = único lugar onde o agente poderá escrever (Fase 3). |
+| `raw` em `data/olheiro.duckdb`; `workspace` em `data/workspace.duckdb` (F3) | `raw` = dados brutos, recriado a cada `olheiro-load`. `workspace` = banco à parte, único lugar onde o agente grava. Um schema `workspace` dentro do banco principal colidia com o catálogo anexado (referência ambígua); o `olheiro-load` agora o remove. |
 | `load_raw_dir` dentro de transação | Se um CSV falhar, o banco não fica pela metade. |
 | `read_csv` com auto-detecção | DuckDB detecta separador (`,`/`;`), cabeçalho e tipos. Testado com `;` e acentos. |
 | Nome da tabela = nome do arquivo normalizado | `Brasileirão 2024.csv` → `raw.brasileirao_2024` (sem acento/espaço; prefixo `t_` se começar com dígito). |
@@ -55,10 +55,16 @@ em fases com mentoria. **Primeiro projeto de agentes do autor: explicar conceito
 | Retentativas do SDK (`max_retries=2`) só no último modelo da cadeia | Principal falha na hora para o fallback entrar sem atraso; o reserva insiste em 429/5xx com espera crescente (recomendação da doc do Pydantic AI). |
 | `olheiro.errors.explain_model_failure` | Sem isso, a falha total mostrava só "All models from FallbackModel failed (2 sub-exceptions)". Agora: uma linha por modelo com HTTP, motivo, limite e quando liberar. Reaproveitável no Streamlit. |
 | Modelo construído com chave explícita (`GoogleProvider(api_key=...)`) | Sem a chave, o provider leria `os.environ`; mantém a regra "só Settings". |
+| F3: defesa em profundidade, 3 camadas independentes | Cada uma bloqueia sozinha: (1) `sql_guard` (sqlglot), (2) motor DuckDB blindado, (3) aprovação humana para gravar. |
+| Camada 1, `sql_guard.check_query` | Uma única consulta (`exp.Query`); toda tabela é um nome (não função/arquivo) em `raw`/`workspace` ou um CTE. Bloqueia `read_csv(...)`, `FROM 'arquivo'`, DDL/DML, `COPY`, `ATTACH`, `SET`, catálogo explícito. Erros sem códigos de cor (campos de `ParseError.errors`). |
+| Camada 2, `db.connect_agent` | Conexão `:memory:` com `ATTACH olheiro.duckdb (READ_ONLY)` + `USE lake`, `ATTACH workspace.duckdb`, `enable_external_access=false`, autoload/autoinstall de extensões desligados, `memory_limit=1GB`, `lock_configuration=true` (por último). Testado: escrever em raw, ler/gravar arquivo, ATTACH, INSTALL e destravar config falham no motor. |
+| Timeout de consulta pela aplicação (`threading.Timer` + `con.interrupt()`, 10 s) | O DuckDB não tem timeout próprio (a doc de segurança manda fazer na aplicação). A conexão continua usável depois. |
+| Camada 3, `save_result` com `ApprovalRequired` | 1ª passagem valida nome/SQL e só então pausa (`DeferredToolRequests` → `PendingApproval`); recusa inválidos sem incomodar o usuário. `resume()` retoma com `DeferredToolResults` (aprovado ou `ToolDenied`). Pausa/retomada (e não `input()` dentro da ferramenta) serve também ao Streamlit. Grava com `CREATE TABLE` (sem sobrescrever) usando o SQL regenerado pelo sqlglot. |
+| Contexto = glossário TOML + catálogo + valores reais (`olheiro.semantic`) | `semantic/glossary.toml` (stdlib `tomllib`, sem dependência) descreve colunas e regras; tipos vêm do banco; `list_values` injeta os valores exatos (times, estados, regiões). ~750 tokens. Instrução dinâmica a cada passo: tabelas recém-salvas aparecem. Teste com os CSVs reais garante sincronia nos dois sentidos. |
 
 Versões verificadas em 2026-10-19: duckdb 1.5.6, pydantic-settings 2.16.0, pytest 9.1.1,
 ruff 0.17.1, uv 0.13.1, google-genai 2.31.0 (F1). Em 2026-10-21: pydantic-ai-slim 2.59.0,
-plotly 7.1.0 (F2). Na 2.59, `result.usage` é propriedade (não método); o banner some com
+plotly 7.1.0 (F2). Em 2026-10-22: sqlglot 30.24.0 (F3); duckdb 2.0.0 saiu, mantido 1.5.6 (atualizar na F8). Na 2.59, `result.usage` é propriedade (não método); o banner some com
 `pydantic_ai.BANNER_ENABLED = False`.
 Pydantic AI + Gemini: extra `pydantic-ai-slim[google]`, prefixo `google:`, chave em
 `GOOGLE_API_KEY` (docs: https://pydantic.dev/docs/ai/models/google/). Modelo Flash estável
@@ -84,19 +90,23 @@ Claude Code.
 ## Estrutura
 ```
 src/olheiro/config.py       configurações (Settings)
-src/olheiro/db.py           conexão DuckDB + carga de CSVs (comando olheiro-load)
+src/olheiro/db.py           carga de CSVs (olheiro-load) e conexão blindada do agente
 src/olheiro/check_setup.py  diagnóstico do ambiente (comando olheiro-check)
-src/olheiro/tools.py        execução de SQL (query_rows) e ferramentas: run_sql, profile_column
-src/olheiro/agent.py        agente Pydantic AI: saída estruturada, validador, ask(), build_model()
+src/olheiro/tools.py        execução de SQL (query_rows, com timeout) e ferramentas: run_sql,
+                            profile_column, save_result
+src/olheiro/sql_guard.py    validador de SQL (camada 1 da defesa)
+src/olheiro/semantic.py     glossário -> contexto do agente (camada de contexto)
+src/olheiro/agent.py        agente Pydantic AI: saída estruturada, validador, ask()/resume()
 src/olheiro/charts.py       ChartSpec + evidência -> figura Plotly (HTML)
 src/olheiro/cli.py          comando olheiro-ask
 src/olheiro/errors.py       explica falhas do modelo (cota, 503, prazo) em português
 learning/manual_loop.py     F1: loop do agente à mão com google-genai (material de estudo)
 tests/                      pytest (pythonpath inclui learning/)
+semantic/glossary.toml      significado das colunas e regras de negócio
 data/raw/                   CSVs de entrada
 data/exports/               exportações do agente (ignorado no Git)
 ```
-Pastas futuras: `semantic/` (F3), `evals/` (F5).
+Pastas futuras: `evals/` (F5).
 
 ## Dados (inspecionados em 2026-10-20)
 - `raw.brasileirao` (450 linhas): **classificação final** por temporada, não jogos. Colunas:
@@ -106,6 +116,10 @@ Pastas futuras: `semantic/` (F3), `evals/` (F5).
   `region` em inglês (Southeast, Northeast...). Junta com `brasileirao` por `team`.
 - CSV com `,`, UTF-8, acentos ok. Não há artilharia nem dados por jogo: perguntas assim devem
   ser recusadas.
+- Armadilhas (achadas no perfil dos dados, registradas no glossário): `Grêmio Barueri` não está
+  em `raw.teams` (JOIN interno o perde); `points` ≠ `3*won + draw` em 11 linhas (punições em
+  2003, 2004, 2010, 2013); `region = 'Central'` é Centro-Oeste; `state` sem acento
+  ("Sao Paulo"); 44 times distintos em `brasileirao`.
 
 ## Status das fases
 - [x] **Fase 0: Fundação.** Estrutura, uv, config, carga no DuckDB, `olheiro-check`, 6 testes.
@@ -118,7 +132,10 @@ Pastas futuras: `semantic/` (F3), `evals/` (F5).
   Testado com o Gemini real: pergunta simples, ranking (RANK/QUALIFY), série com gráfico (7
   requisições) e recusa (artilheiro → `answerable=false`).
   Rodar: `uv run olheiro-ask [--verbose] "pergunta"`.
-- [ ] Fase 3: segurança e contexto (sqlglot, read-only, glossário, save_result com confirmação)
+- [x] **Fase 3: segurança e contexto.** 3 camadas (sqlglot, motor blindado, aprovação humana),
+  timeout de consulta, glossário + valores reais no contexto, `olheiro-check` verifica blindagem
+  e glossário. 75 testes. Teste real único (4 requisições): aproveitamento dos campeões (regra
+  do glossário aplicada: Cruzeiro 2003 em 3º, não 1º) + `save_result` aprovado → tabela gravada.
 - [ ] Fase 4: Streamlit
 - [ ] Fase 5: evals (30+ perguntas, 2 modelos)
 - [ ] Fase 6: observabilidade
@@ -126,9 +143,9 @@ Pastas futuras: `semantic/` (F3), `evals/` (F5).
 - [ ] Fase 8: Docker, CI, deploy, README
 
 ## Pendências / em aberto
-- **Segurança (Fase 3):** a conexão read-only protege o banco, mas não o disco. Testado:
-  `read_csv('/etc/hosts')` lê arquivos arbitrários e `COPY ... TO` grava arquivos. Corrigir com
-  `enable_external_access=false` na conexão do agente + validação com sqlglot (só SELECT).
+- **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB
+  recomenda isolamento de SO/contêiner). Para deploy (F8): rodar em contêiner sem rede de saída
+  além da API do modelo.
 - **Evals (Fase 5):** a regra "insight só com base no resultado do SQL" é só instrução; medir
   se os insights batem com a evidência (ex.: LLM-juiz comparando insight × tabela).
 - **Orçamento de cota (Fase 5):** 30+ perguntas × 2–7 requisições × 2 modelos não cabe em

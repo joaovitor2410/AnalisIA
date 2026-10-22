@@ -10,6 +10,7 @@ dependencies = [
     "plotly>=7.1.0",
     "pydantic-ai-slim[google]>=2.59.0",
     "pydantic-settings>=2.16.0",
+    "sqlglot>=30.24.0",
 ]
 
 [project.scripts]

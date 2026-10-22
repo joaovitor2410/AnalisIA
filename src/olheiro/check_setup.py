@@ -11,7 +11,8 @@ from dataclasses import dataclass
 import duckdb
 
 from olheiro.config import PROJECT_ROOT, PROVIDER_KEY_FIELDS, Settings, get_settings
-from olheiro.db import RAW_SCHEMA, WORKSPACE_SCHEMA, connect, find_csv_files, table_name_from_file
+from olheiro.db import RAW_SCHEMA, connect, connect_agent, find_csv_files, table_name_from_file
+from olheiro.semantic import check_glossary, load_glossary
 
 MIN_PYTHON = (3, 13)
 
@@ -84,12 +85,24 @@ def check_tables(settings: Settings) -> CheckResult:
     return CheckResult(bool(found), "Tabelas raw", summary or "nenhuma tabela")
 
 
-def check_workspace_schema(settings: Settings) -> CheckResult:
+def check_agent_connection(settings: Settings) -> CheckResult:
+    """A conexão do agente abre e o motor recusa ler arquivos do disco."""
+    label = "Conexão blindada do agente"
+    try:
+        with connect_agent(settings.duckdb_path, settings.workspace_path) as con:
+            con.execute("SELECT * FROM read_csv('/etc/hosts')")
+    except duckdb.PermissionException:
+        return CheckResult(True, label, "raw somente leitura, sem acesso a disco/rede")
+    except duckdb.Error as error:
+        return CheckResult(False, label, f"erro ao abrir: {error}")
+    return CheckResult(False, label, "acesso a arquivos NÃO está bloqueado")
+
+
+def check_glossary_sync(settings: Settings) -> CheckResult:
+    """O glossário descreve exatamente as colunas que existem no banco."""
     with connect(settings.duckdb_path, read_only=True) as con:
-        exists = con.execute(
-            "SELECT count(*) FROM duckdb_schemas() WHERE schema_name = ?", [WORKSPACE_SCHEMA]
-        ).fetchone()[0]
-    return CheckResult(bool(exists), f"Schema {WORKSPACE_SCHEMA}", "ok" if exists else "faltando")
+        problems = check_glossary(load_glossary(settings.glossary_path), con)
+    return CheckResult(not problems, "Glossário x banco", "; ".join(problems) or "em sincronia")
 
 
 def run_checks() -> list[CheckResult]:
@@ -103,7 +116,11 @@ def run_checks() -> list[CheckResult]:
         check_database(settings),
     ]
     if results[-1].ok:
-        db_checks: list[Callable[[Settings], CheckResult]] = [check_tables, check_workspace_schema]
+        db_checks: list[Callable[[Settings], CheckResult]] = [
+            check_tables,
+            check_agent_connection,
+            check_glossary_sync,
+        ]
         results += [check(settings) for check in db_checks]
     return results
 
@@ -114,6 +131,6 @@ def main() -> None:
         icon = "✅" if result.ok else "❌"
         print(f"{icon} {result.label}: {result.detail}")
     if all(r.ok for r in results):
-        print("\nTudo pronto para a Fase 1.")
+        print("\nTudo pronto.")
     else:
         sys.exit("\nCorrija os itens com ❌ e rode de novo.")

@@ -37,8 +37,12 @@ class Settings(BaseSettings):
     duckdb_path: Path = Path("data/olheiro.duckdb")
     raw_data_dir: Path = Path("data/raw")
     exports_dir: Path = Path("data/exports")
+    workspace_path: Path = Path("data/workspace.duckdb")
+    glossary_path: Path = Path("semantic/glossary.toml")
 
-    @field_validator("duckdb_path", "raw_data_dir", "exports_dir")
+    @field_validator(
+        "duckdb_path", "raw_data_dir", "exports_dir", "workspace_path", "glossary_path"
+    )
     @classmethod
     def _resolve_from_root(cls, path: Path) -> Path:
         """Caminhos relativos são relativos à raiz do projeto, não à pasta atual."""
