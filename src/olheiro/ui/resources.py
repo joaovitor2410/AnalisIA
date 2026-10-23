@@ -17,6 +17,8 @@ from olheiro.config import Settings, get_settings
 from olheiro.dashboard import DashboardStore
 from olheiro.db import connect_agent, session_cursor
 from olheiro.semantic import Glossary, load_glossary
+from olheiro.telemetry import RunLog
+from olheiro.tracing import setup_tracing
 
 
 @dataclass(frozen=True)
@@ -26,6 +28,7 @@ class AppResources:
     glossary: Glossary
     cache: AnswerCache
     dashboard: DashboardStore
+    runs: RunLog
     model: Model | None  # None sem chave: o app ainda mostra dados, dashboard e cache
     model_error: str | None
 
@@ -34,6 +37,7 @@ class AppResources:
 def load_resources() -> AppResources:
     pydantic_ai.BANNER_ENABLED = False
     settings = get_settings()
+    setup_tracing(settings)
     try:
         model, model_error = build_model(settings), None
     except ValueError as error:
@@ -44,6 +48,7 @@ def load_resources() -> AppResources:
         glossary=load_glossary(settings.glossary_path),
         cache=AnswerCache(settings.answer_cache_path),
         dashboard=DashboardStore(settings.dashboard_path),
+        runs=RunLog(settings.runs_path),
         model=model,
         model_error=model_error,
     )

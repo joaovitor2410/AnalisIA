@@ -13,6 +13,7 @@ from olheiro.agent import AgentDeps, AgentReport, PendingApproval, resume
 from olheiro.cache import ask_with_cache
 from olheiro.db import WORKSPACE_CATALOG
 from olheiro.errors import explain_model_failure
+from olheiro.telemetry import tracked
 from olheiro.tools import query_rows
 from olheiro.ui.components import show_report, show_table
 from olheiro.ui.resources import AppResources, load_resources, session_deps
@@ -84,23 +85,32 @@ def queue_example() -> None:
 
 
 def handle_question(question: str, resources: AppResources, deps: AgentDeps) -> None:
-    history: list[ChatTurn] = st.session_state.history
-    cached = resources.cache.lookup(question, deps.con)
-    if cached is not None:  # do cache: não conta no limite da sessão
-        history.append(ChatTurn(question, cached))
-        return
-    problem = model_unavailable(resources)
-    if problem is not None:
-        history.append(ChatTurn(question, error=problem))
-        return
-
-    st.session_state.model_questions += 1
+    """Responde e registra a execução (página Operação); falhas viram uma mensagem no chat."""
     try:
-        outcome = ask_with_cache(question, deps, resources.cache, resources.model)
+        with tracked(resources.runs, question, "app") as run:
+            outcome = answer(question, resources, deps)
+            if outcome is None:
+                return
+            run.finish(outcome)
     except (AgentRunError, FallbackExceptionGroup) as error:
-        history.append(ChatTurn(question, error=explain_model_failure(error)))
+        st.session_state.history.append(ChatTurn(question, error=explain_model_failure(error)))
         return
     record(question, outcome)
+
+
+def answer(
+    question: str, resources: AppResources, deps: AgentDeps
+) -> AgentReport | PendingApproval | None:
+    """Do cache, do modelo, ou None se o modelo não puder ser usado (o motivo vai para o chat)."""
+    cached = resources.cache.lookup(question, deps.con)
+    if cached is not None:  # do cache: não conta no limite da sessão
+        return cached
+    problem = model_unavailable(resources)
+    if problem is not None:
+        st.session_state.history.append(ChatTurn(question, error=problem))
+        return None
+    st.session_state.model_questions += 1
+    return ask_with_cache(question, deps, resources.cache, resources.model)
 
 
 def model_unavailable(resources: AppResources) -> str | None:
@@ -169,8 +179,11 @@ def decide(approved: bool, resources: AppResources, deps: AgentDeps) -> None:
     pending: PendingTurn = st.session_state.pending
     st.session_state.pending = None
     try:
-        with st.spinner("Continuando…"):
-            outcome = resume(pending.approval, approved, deps, resources.model)
+        with (
+            tracked(resources.runs, pending.question, "app", phase="resume") as run,
+            st.spinner("Continuando…"),
+        ):
+            outcome = run.finish(resume(pending.approval, approved, deps, resources.model))
     except (AgentRunError, FallbackExceptionGroup) as error:
         st.session_state.history.append(
             ChatTurn(pending.question, error=explain_model_failure(error))

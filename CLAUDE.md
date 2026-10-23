@@ -81,6 +81,13 @@ interface (agent, cache, dashboard, semantic, storage); Streamlit é só uma cam
 | F5: evals com `pydantic-evals` e avaliadores **determinísticos** (sem LLM-juiz) | Juiz gastaria cota e teria erro próprio. `comportamento` (responde/recusa/protege), `evidencia` (resultado = SQL de gabarito: mesmas linhas, cada coluna do gabarito presente em qualquer ordem/nome, tolera escala % e arredondamento), `mencoes` (termos esperados, "a\|b"), `ancoragem` (números da resposta presentes na evidência; anos 2003–2024 são contexto). |
 | Eval roda sem cache e sem fallback, workspace temporário, gravações recusadas | Mede o modelo puro; pedido de `save_result` num caso de segurança reprova. Custo medido por caso (`PRICES_PER_MILLION`, conferido em 2026-10-22). O comando mostra estimativa e pede confirmação. |
 | Resultados em `evals/results/` (JSON por modelo + README comparativo) versionados | Evidência para o portfólio; regerado a cada rodada. |
+| F6: observabilidade em 2 camadas | **Traces** OpenTelemetry (padrão de mercado, sem fornecedor fixo) para o passo a passo; **registro de execuções** (`data/runs.jsonl`, um `RunRecord` por chamada) para métricas de produto. Ligados pelo `trace_id`. |
+| Instrumentação nativa do Pydantic AI (`Agent.instrument_all(InstrumentationSettings(...))`) + span raiz `olheiro.pergunta` | Spans `invoke_agent olheiro` > `chat <modelo>` (tokens) e `execute_tool <nome>`. Destino em `OLHEIRO_TRACING`: `file` (JSONL local, padrão), `otlp` (Jaeger/Tempo/Phoenix/Logfire) ou `off`. `BatchSpanProcessor` + `atexit` (CLI grava os pendentes ao sair). |
+| `OLHEIRO_TRACE_CONTENT` (`include_content`) | Privacidade: com `false`, perguntas, respostas e argumentos/resultados de ferramentas não vão para os traces (testado). Desligar numa demo pública. |
+| `telemetry.tracked()` em app, CLI e eval | Mede, abre o span raiz e grava o registro; erros também (com `explain_model_failure`) e são relançados. Sem resultado (ex.: limite da sessão), não grava. O tempo de decisão do usuário na aprovação fica fora da medida. |
+| `tracing.py` é o único módulo com estado global | O OpenTelemetry é global por processo; `setup_tracing` é idempotente e `reset_tracing` isola os testes (`tests/conftest.py` desliga o tracing e aponta os logs para `tmp_path` em todo teste). |
+| Página Operação | KPIs (perguntas, % cache, % erro, latência p50/p95, requisições/pergunta, custo equivalente), latência no tempo, desfechos, execuções recentes e **cascata do trace** de cada pergunta. Lê só arquivos; não chama o modelo. |
+| `pricing.py` compartilhado (evals e Operação) | Custo equivalente no nível pago; inclui `gemini-3.6-flash` (nome servido do 3.5 Flash). |
 | Modelo construído com chave explícita (`GoogleProvider(api_key=...)`) | Sem a chave, o provider leria `os.environ`; mantém a regra "só Settings". |
 | F3: defesa em profundidade, 3 camadas independentes | Cada uma bloqueia sozinha: (1) `sql_guard` (sqlglot), (2) motor DuckDB blindado, (3) aprovação humana para gravar. |
 | Camada 1, `sql_guard.check_query` | Uma única consulta (`exp.Query`); toda tabela é um nome (não função/arquivo) em `raw`/`workspace` ou um CTE. Bloqueia `read_csv(...)`, `FROM 'arquivo'`, DDL/DML, `COPY`, `ATTACH`, `SET`, catálogo explícito. Erros sem códigos de cor (campos de `ParseError.errors`). |
@@ -92,7 +99,8 @@ interface (agent, cache, dashboard, semantic, storage); Streamlit é só uma cam
 Versões verificadas em 2026-10-19: duckdb 1.5.6, pydantic-settings 2.16.0, pytest 9.1.1,
 ruff 0.17.1, uv 0.13.1, google-genai 2.31.0 (F1). Em 2026-10-21: pydantic-ai-slim 2.59.0,
 plotly 7.1.0 (F2). Em 2026-10-22: sqlglot 30.24.0 (F3); duckdb 2.0.0 saiu, mantido 1.5.6 (atualizar na F8);
-streamlit 1.66.1 e pandas 3.1.0 (F4); pydantic-evals 2.59.0 (extra `evals`) e mypy 2.4.0 (F5).
+streamlit 1.66.1 e pandas 3.1.0 (F4); pydantic-evals 2.59.0 (extra `evals`) e mypy 2.4.0 (F5);
+opentelemetry-sdk e exporter-otlp-proto-http 1.45.1 (F6, mesma versão da API trazida pelo Pydantic AI).
 Preços pagos (2026-10-22, por 1M tokens): 3.8 Flash US$ 0,75 entrada / 3,75 saída (dobra em 2027);
 3.5 Flash-Lite US$ 0,30 / 2,50. Thinking é cobrado como saída. Na 2.59, `result.usage` é propriedade (não método); o banner some com
 `pydantic_ai.BANNER_ENABLED = False`.
@@ -133,13 +141,16 @@ src/olheiro/cache.py        cache de respostas + ask_with_cache
 src/olheiro/dashboard.py    itens fixados (SQL + ChartSpec) e render_item
 src/olheiro/storage.py      JsonFile: modelo Pydantic em JSON com lock e escrita atômica
 src/olheiro/app.py          entrada do Streamlit (navegação + barra lateral)
-src/olheiro/ui/             páginas Perguntar, Dashboard, Dados + recursos e componentes
+src/olheiro/ui/             páginas Perguntar, Dashboard, Dados, Operação + recursos e componentes
 src/olheiro/errors.py       explica falhas do modelo (cota, 503, prazo) em português
 src/olheiro/evaluation.py   evals: tarefa, avaliadores, resumo (comando olheiro-eval)
+src/olheiro/pricing.py      preço por modelo e custo equivalente
+src/olheiro/tracing.py      OpenTelemetry: setup, exportador JSONL, leitura de um trace
+src/olheiro/telemetry.py    RunRecord, RunLog e tracked() (registro de execuções)
 evals/cases.yaml            39 casos com gabarito em 7 categorias
 evals/results/              resultados por modelo + README comparativo
 learning/manual_loop.py     F1: loop do agente à mão com google-genai (material de estudo)
-tests/                      pytest (pythonpath inclui learning/)
+tests/                      pytest (pythonpath inclui learning/; conftest isola tracing e logs)
 semantic/glossary.toml      significado das colunas e regras de negócio
 data/raw/                   CSVs de entrada
 data/exports/               exportações do agente (ignorado no Git)
@@ -185,7 +196,10 @@ data/exports/               exportações do agente (ignorado no Git)
   Rodar: `uv run olheiro-eval --model google:gemini-3.8-flash` e `--model google:gemini-3.5-flash-lite`.
   Os gabaritos acharam 2 erros no glossário da F3 (Barueri em 2009 também; pontos ≠ 3V+E nem
   sempre é punição), corrigidos.
-- [ ] Fase 6: observabilidade
+- [x] **Fase 6: observabilidade.** Traces OpenTelemetry (arquivo/OTLP/off, privacidade),
+  registro de execuções, página Operação com KPIs e cascata do trace. 114 testes. Teste real
+  único (1 requisição): recusa do artilheiro em **4,6 s e 1 requisição**, contra ~55 s e 3
+  requisições na F2 (o glossário da F3 eliminou a exploração; agora medido).
 - [ ] Fase 7: servidor MCP
 - [ ] Fase 8: Docker, CI, deploy, README
 
@@ -195,8 +209,8 @@ data/exports/               exportações do agente (ignorado no Git)
   além da API do modelo.
 - **Ancoragem é heurística:** confere números, não afirmações qualitativas ("melhor", "pior").
   Um LLM-juiz poderia cobrir isso depois, com custo.
-- **Latência/custo (Fase 6):** pergunta com gráfico levou 7 requisições (~19k tokens); recusa
-  levou ~55 s. Observar por passo.
+- **Observabilidade local:** `data/traces.jsonl` e `data/runs.jsonl` crescem sem rotação (ok
+  para uso local; num deploy, usar `otlp` e um backend com retenção).
 - **Para a publicação (F8):** decidir a hospedagem; cache curado de exemplos versionado (hoje
   `data/answer_cache.json` é local e ignorado no Git); dashboard por visitante (hoje é um
   arquivo único, compartilhado); `OLHEIRO_SESSION_QUESTION_LIMIT` ligado.

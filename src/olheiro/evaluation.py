@@ -35,18 +35,15 @@ from olheiro.agent import LAST_MODEL_RETRIES, AgentDeps, PendingApproval, ask, g
 from olheiro.config import PROJECT_ROOT, get_settings
 from olheiro.db import RAW_SCHEMA, connect_agent, scalar, session_cursor
 from olheiro.errors import explain_model_failure
+from olheiro.pricing import cost_usd
 from olheiro.semantic import Glossary, load_glossary
+from olheiro.telemetry import RunLog, tracked
 from olheiro.tools import QueryResult, query_rows
+from olheiro.tracing import setup_tracing
 
 CASES_PATH = PROJECT_ROOT / "evals" / "cases.yaml"
 RESULTS_DIR = PROJECT_ROOT / "evals" / "results"
 
-# US$ por 1M tokens (entrada, saída com thinking), nível pago padrão. Conferido em 2026-10-22 em
-# https://ai.google.dev/gemini-api/docs/pricing (o 3.8 Flash dobra a partir de 2027-01-01).
-PRICES_PER_MILLION: dict[str, tuple[float, float]] = {
-    "gemini-3.8-flash": (0.75, 3.75),
-    "gemini-3.5-flash-lite": (0.30, 2.50),
-}
 # Média medida nos testes reais das fases 2–4, usada só para a estimativa antes de rodar.
 ESTIMATED_TOKENS_PER_CASE = (10_000, 2_000)
 
@@ -277,19 +274,13 @@ def raw_row_count(con: duckdb.DuckDBPyConnection) -> int:
     return sum(scalar(con, f'SELECT count(*) FROM {RAW_SCHEMA}."{name}"') for (name,) in tables)
 
 
-def cost_usd(model_id: str, input_tokens: int, output_tokens: int) -> float | None:
-    prices = PRICES_PER_MILLION.get(model_id.partition(":")[2])
-    if prices is None:
-        return None
-    return (input_tokens * prices[0] + output_tokens * prices[1]) / 1_000_000
-
-
 def make_task(
     con: duckdb.DuckDBPyConnection,
     glossary: Glossary,
     model: Model,
     model_id: str,
     secret: str | None,
+    runs: RunLog,
 ) -> Callable[[str], EvalOutput]:
     """A tarefa avaliada: uma pergunta ao agente, com gravações recusadas automaticamente."""
 
@@ -298,10 +289,12 @@ def make_task(
         rows_before = raw_row_count(deps.con)
         save_requested = False
         try:
-            outcome = ask(question, deps, model)
+            with tracked(runs, question, "eval") as run:
+                outcome = run.finish(ask(question, deps, model))
             while isinstance(outcome, PendingApproval):  # numa eval, ninguém aprova gravação
                 save_requested = True
-                outcome = resume(outcome, approved=False, deps=deps, model=model)
+                with tracked(runs, question, "eval", phase="resume") as run:
+                    outcome = run.finish(resume(outcome, approved=False, deps=deps, model=model))
         except (AgentRunError, FallbackExceptionGroup) as error:
             return EvalOutput(error=explain_model_failure(error))
 
@@ -350,6 +343,7 @@ def evaluate(
     glossary: Glossary,
     model: Model,
     model_id: str,
+    runs: RunLog,
     secret: str | None = None,
     concurrency: int = 2,
 ) -> EvaluationReport[str, EvalOutput, CaseMeta]:
@@ -359,7 +353,7 @@ def evaluate(
         MentionsExpected(),
         NumbersGrounded(),
     ]
-    task = make_task(con, glossary, model, model_id, secret)
+    task = make_task(con, glossary, model, model_id, secret, runs)
     return dataset.evaluate_sync(task, name=model_id, max_concurrency=concurrency, progress=False)
 
 
@@ -546,6 +540,7 @@ def main(argv: list[str] | None = None) -> None:
         model = google_model(model_id, settings.google_api_key, LAST_MODEL_RETRIES)
     except ValueError as error:
         sys.exit(str(error))
+    setup_tracing(settings)  # a rodada também gera traces: tempo de cada passo por caso
 
     # Workspace descartável: numa eval nada deve ser gravado, mas se for, não suja o do usuário.
     with (
@@ -558,6 +553,7 @@ def main(argv: list[str] | None = None) -> None:
             load_glossary(settings.glossary_path),
             model,
             model_id,
+            RunLog(settings.runs_path),
             secret_value(settings.google_api_key),
             args.concurrency,
         )

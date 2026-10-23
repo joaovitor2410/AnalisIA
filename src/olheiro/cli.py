@@ -32,7 +32,9 @@ from olheiro.config import get_settings
 from olheiro.db import WORKSPACE_CATALOG, connect_agent
 from olheiro.errors import explain_model_failure
 from olheiro.semantic import load_glossary
+from olheiro.telemetry import RunLog, tracked
 from olheiro.tools import query_rows
+from olheiro.tracing import setup_tracing
 
 PREVIEW_ROWS = 5
 
@@ -96,16 +98,21 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(str(error))
 
     glossary = load_glossary(settings.glossary_path)
+    setup_tracing(settings)
+    runs = RunLog(settings.runs_path)
     with connect_agent(settings.duckdb_path, settings.workspace_path) as con:
         deps = AgentDeps(con, glossary)
         try:
-            if args.no_cache:
-                outcome = ask(args.question, deps, model)
-            else:
-                cache = AnswerCache(settings.answer_cache_path)
-                outcome = ask_with_cache(args.question, deps, cache, model)
+            with tracked(runs, args.question, "cli") as run:
+                if args.no_cache:
+                    outcome = run.finish(ask(args.question, deps, model))
+                else:
+                    cache = AnswerCache(settings.answer_cache_path)
+                    outcome = run.finish(ask_with_cache(args.question, deps, cache, model))
             while isinstance(outcome, PendingApproval):
-                outcome = resume(outcome, confirm_save(outcome, con), deps, model)
+                approved = confirm_save(outcome, con)  # o tempo de decisão não entra na medida
+                with tracked(runs, args.question, "cli", phase="resume") as run:
+                    outcome = run.finish(resume(outcome, approved, deps, model))
         except (AgentRunError, FallbackExceptionGroup) as error:
             # Falha da API (cota, 503 em todos os modelos) ou modelo que esgotou as retentativas.
             sys.exit(f"Erro ao consultar o modelo. {explain_model_failure(error)}")

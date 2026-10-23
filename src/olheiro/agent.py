@@ -135,6 +135,7 @@ REQUEST_TIMEOUT_SECONDS = 60
 # Saída em união: os parâmetros de tipo precisam ser explícitos (senão o mypy assume str).
 type AgentOutput = AnalysisAnswer | DeferredToolRequests
 agent: Agent[AgentDeps, AgentOutput] = Agent(
+    name="olheiro",  # aparece nos traces: "invoke_agent olheiro"
     output_type=[AnalysisAnswer, DeferredToolRequests],
     deps_type=AgentDeps,
     instructions=INSTRUCTIONS,

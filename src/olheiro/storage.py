@@ -1,7 +1,7 @@
-"""Um modelo Pydantic guardado num arquivo JSON (cache de respostas, dashboard).
+"""Modelos Pydantic em arquivo: JSON inteiro (cache, dashboard) ou JSONL só de acréscimo (logs).
 
-Escrita atômica (grava num temporário e troca) e lock, para duas sessões do app não se
-atropelarem. Para um deploy com vários usuários, é este módulo que muda (ex.: banco de dados).
+Escrita atômica ou por acréscimo, sempre com lock, para duas sessões do app não se atropelarem.
+Para um deploy com vários usuários, é este módulo que muda (ex.: banco de dados).
 """
 
 import threading
@@ -9,7 +9,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 
 class JsonFile[M: BaseModel]:
@@ -33,3 +33,29 @@ class JsonFile[M: BaseModel]:
             temporary = self.path.with_suffix(".tmp")
             temporary.write_text(data.model_dump_json(indent=2), encoding="utf-8")
             temporary.replace(self.path)
+
+
+class JsonLines[M: BaseModel]:
+    """Um registro por linha, só acréscimo: gravar é barato e uma linha ruim não perde as outras."""
+
+    def __init__(self, path: Path, model: type[M]) -> None:
+        self.path = path
+        self.model = model
+        self._lock = threading.Lock()
+
+    def append(self, record: M) -> None:
+        with self._lock:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as file:
+                file.write(record.model_dump_json() + "\n")
+
+    def read(self) -> list[M]:
+        if not self.path.exists():
+            return []
+        records = []
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            try:
+                records.append(self.model.model_validate_json(line))
+            except ValidationError:
+                continue  # linha cortada (ex.: processo morto no meio da escrita): ignora
+        return records

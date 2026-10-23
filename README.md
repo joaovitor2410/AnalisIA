@@ -20,6 +20,10 @@ uv run streamlit run src/olheiro/app.py                 # app: Perguntar, Dashbo
 uv run olheiro-ask --verbose "Qual região tem mais títulos?"   # pelo terminal
 ```
 
+Cada pergunta gera um trace OpenTelemetry e um registro de execução, visíveis na página
+**Operação** do app (latência, custo, erros e o passo a passo do agente). Para enviar os traces a
+um backend (Jaeger, Grafana Tempo, Phoenix, Logfire): `OLHEIRO_TRACING=otlp` no `.env`.
+
 ## Qualidade
 
 ```bash

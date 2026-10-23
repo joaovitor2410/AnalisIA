@@ -9,6 +9,7 @@ import streamlit as st
 from olheiro.ui.ask_page import ask_page
 from olheiro.ui.dashboard_page import dashboard_page
 from olheiro.ui.data_page import data_page
+from olheiro.ui.ops_page import ops_page
 from olheiro.ui.resources import load_resources
 
 
@@ -37,5 +38,6 @@ st.navigation(
         st.Page(ask_page, title="Perguntar", icon=":material/chat:", default=True),
         st.Page(dashboard_page, title="Dashboard", icon=":material/dashboard:"),
         st.Page(data_page, title="Dados", icon=":material/table_chart:"),
+        st.Page(ops_page, title="Operação", icon=":material/monitoring:"),
     ]
 ).run()

@@ -5,6 +5,7 @@ Assim, trocar de modelo/provedor é só mudar o .env.
 """
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -44,6 +45,13 @@ class Settings(BaseSettings):
     # Perguntas que vão ao modelo por sessão do app (respostas do cache não contam).
     # Vazio = sem limite (uso local); numa demo pública, protege a cota do nível gratuito.
     olheiro_session_question_limit: int | None = None
+    # Observabilidade (F6). Traces OpenTelemetry: off, file (traces_path) ou otlp (backend).
+    olheiro_tracing: Literal["off", "file", "otlp"] = "file"
+    olheiro_otlp_endpoint: str = "http://localhost:4318/v1/traces"
+    # Perguntas, respostas e argumentos das ferramentas nos traces. Desligar numa demo pública.
+    olheiro_trace_content: bool = True
+    traces_path: Path = Path("data/traces.jsonl")
+    runs_path: Path = Path("data/runs.jsonl")
 
     @field_validator(
         "duckdb_path",
@@ -53,6 +61,8 @@ class Settings(BaseSettings):
         "glossary_path",
         "answer_cache_path",
         "dashboard_path",
+        "traces_path",
+        "runs_path",
     )
     @classmethod
     def _resolve_from_root(cls, path: Path) -> Path:

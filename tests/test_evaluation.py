@@ -24,6 +24,7 @@ from olheiro.evaluation import (
 )
 from olheiro.semantic import load_glossary
 from olheiro.sql_guard import check_query
+from olheiro.telemetry import RunLog
 from olheiro.tools import QueryResult, query_rows
 
 models.ALLOW_MODEL_REQUESTS = False
@@ -155,7 +156,10 @@ def test_full_evaluation_run_scores_each_behavior(
     dataset.cases = [case for case in dataset.cases if case.name in names]
     glossary = load_glossary(PROJECT_ROOT / "semantic" / "glossary.toml")
 
-    report = evaluate(dataset, real_data, glossary, scripted_model(), "google:gemini-3.8-flash")
+    runs = RunLog(tmp_path / "runs.jsonl")
+    report = evaluate(
+        dataset, real_data, glossary, scripted_model(), "google:gemini-3.8-flash", runs
+    )
     summary = summarize(report, "google:gemini-3.8-flash")
     checks = {case.name: case.checks for case in summary.cases}
 
@@ -168,7 +172,8 @@ def test_full_evaluation_run_scores_each_behavior(
         "mencoes": False,  # não citou o Palmeiras
     }
 
-    path = save_summary(summary, tmp_path)
-    readme = (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert {record.source for record in runs.read()} == {"eval"}  # cada caso foi registrado
+    path = save_summary(summary, tmp_path / "results")
+    readme = (tmp_path / "results" / "README.md").read_text(encoding="utf-8")
     assert path.name == "google_gemini-3.8-flash.json"
     assert "| Comportamento correto | 75% |" in readme
