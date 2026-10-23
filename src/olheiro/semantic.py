@@ -10,7 +10,7 @@ from pathlib import Path
 import duckdb
 from pydantic import BaseModel, field_validator
 
-from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG
+from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG, scalar
 
 
 class ColumnDoc(BaseModel):
@@ -76,10 +76,11 @@ def check_glossary(glossary: Glossary, con: duckdb.DuckDBPyConnection) -> list[s
 
 def distinct_values(con: duckdb.DuckDBPyConnection, table: str, column: str) -> str:
     # Seguro interpolar: tabela e coluna vêm do catálogo do banco, não do modelo.
-    (values,) = con.execute(
+    values = scalar(
+        con,
         f'SELECT string_agg(DISTINCT "{column}", \', \' ORDER BY "{column}") '
-        f'FROM {RAW_SCHEMA}."{table}"'
-    ).fetchone()
+        f'FROM {RAW_SCHEMA}."{table}"',
+    )
     return values or ""
 
 

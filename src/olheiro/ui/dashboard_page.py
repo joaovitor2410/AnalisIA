@@ -44,18 +44,18 @@ def chunks(items: Sequence[RenderedItem], size: int) -> list[Sequence[RenderedIt
 
 
 def show_card(rendered: RenderedItem, resources: AppResources) -> None:
-    item = rendered.item
+    item, evidence = rendered.item, rendered.evidence
     with st.container(border=True):
-        if rendered.error is not None:
+        if rendered.error is not None or evidence is None:
             st.markdown(f"**{item.title}**")
             st.error(f"Não foi possível atualizar: {rendered.error}", icon=":material/error:")
         elif item.chart is not None and item.chart.kind == "metric":
-            show_metric(item.chart, rendered.evidence)
+            show_metric(item.chart, evidence)
         elif rendered.figure is not None:
             st.plotly_chart(rendered.figure, key=f"dashboard-{item.id}")
         else:
             st.markdown(f"**{item.title}**")
-            show_table(rendered.evidence)
+            show_table(evidence)
 
         with st.expander("Pergunta e SQL"):
             st.caption(item.question)

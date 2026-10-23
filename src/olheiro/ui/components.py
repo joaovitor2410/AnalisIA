@@ -1,5 +1,7 @@
 """Peças visuais reaproveitadas pelas páginas."""
 
+from decimal import Decimal
+
 import pandas as pd
 import streamlit as st
 
@@ -23,7 +25,16 @@ def show_metric(spec: ChartSpec, evidence: QueryResult) -> None:
     label = spec.title
     if spec.x is not None:
         label += f" · {evidence.column_values(spec.x)[0]}"
-    st.metric(label, evidence.column_values(spec.y)[0], border=True)
+    st.metric(label, metric_value(evidence.column_values(spec.y)[0]), border=True)
+
+
+def metric_value(value: object) -> int | float | str | None:
+    """O st.metric aceita número, texto ou None; Decimal e outros tipos do banco são convertidos."""
+    if value is None or isinstance(value, int | float | str):
+        return value
+    if isinstance(value, Decimal):
+        return float(value)
+    return str(value)
 
 
 def show_visual(spec: ChartSpec, evidence: QueryResult, key: str) -> None:

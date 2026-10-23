@@ -33,7 +33,9 @@ interface (agent, cache, dashboard, semantic, storage); Streamlit é só uma cam
 ## Convenções
 - Código (nomes) em inglês; comentários, docstrings e docs em português.
 - Type hints em tudo, funções pequenas, sem "mágica".
-- Layout `src/` (pacote `olheiro`), gerenciado com **uv**. Lint/format: `ruff`. Testes: `pytest`.
+- Layout `src/` (pacote `olheiro`), gerenciado com **uv**. Lint/format: `ruff`. Tipos: `mypy`
+  (`uv run mypy`, zero erros; só `plotly`/`pandas` sem stubs são ignorados). Testes: `pytest`.
+- Consulta de valor único: `db.scalar()` (nunca `fetchone()[0]`, que esconde o caso `None`).
 - Configuração só via `olheiro.config.Settings` (pydantic-settings). Nenhum módulo lê `os.environ`.
 - Segredos só no `.env` (no `.gitignore`); `.env.example` documenta as variáveis.
 - Dependências entram na fase em que são usadas (não adicionar tudo de uma vez).
@@ -42,8 +44,10 @@ interface (agent, cache, dashboard, semantic, storage); Streamlit é só uma cam
 - macOS (Apple Silicon), zsh. Projeto em `~/Desktop/AnalisIA`.
 - Python **3.13** fixado em `.python-version`. O sistema tem 3.15, mas o duckdb 1.5.6 ainda não
   publica wheels para 3.15. O uv baixa o 3.13 automaticamente.
-- Provedor de desenvolvimento: **Gemini Flash (nível gratuito)**. Claude Haiku 5.5 como 2º modelo
-  para comparação nas evals (Fase 5).
+- Provedor de desenvolvimento: **Gemini Flash (nível gratuito)**. Evals (F5): `gemini-3.8-flash` ×
+  `gemini-3.5-flash-lite`, no **nível pago com teto** (escolha do autor em 2026-10-22; Claude Haiku
+  ficou de fora). Ativar faturamento vale para o projeto inteiro da chave: sugestão registrada de
+  usar uma chave paga só para evals (`GOOGLE_API_KEY=... uv run olheiro-eval`).
 
 ## Decisões técnicas
 | Decisão | Motivo |
@@ -74,6 +78,9 @@ interface (agent, cache, dashboard, semantic, storage); Streamlit é só uma cam
 | Uma conexão blindada por processo + `session_cursor` por sessão | DuckDB pede um cursor por thread e não anexa o mesmo arquivo duas vezes no processo. Testado: o cursor herda a blindagem (global) mas **não** o `USE lake` (por conexão), então `session_cursor` repete o `USE`. |
 | Streamlit (`ui/`, `app.py`) com `st.navigation` e páginas-função | Perguntar (chat, exemplos do cache via `st.pills`, aprovação por botões, fixar), Dashboard (KPIs em linha, cartões 2 colunas) e Dados (glossário, prévia, perfil). `width="stretch"` substituiu `use_container_width`. |
 | Testes de UI com `AppTest` | `from_function` por página (o `switch_page` exige arquivo); modelo bloqueado ou `FunctionModel` via `monkeypatch` em `ui.resources.build_model`; arquivos do app apontados para `tmp_path` por variáveis de ambiente. |
+| F5: evals com `pydantic-evals` e avaliadores **determinísticos** (sem LLM-juiz) | Juiz gastaria cota e teria erro próprio. `comportamento` (responde/recusa/protege), `evidencia` (resultado = SQL de gabarito: mesmas linhas, cada coluna do gabarito presente em qualquer ordem/nome, tolera escala % e arredondamento), `mencoes` (termos esperados, "a\|b"), `ancoragem` (números da resposta presentes na evidência; anos 2003–2024 são contexto). |
+| Eval roda sem cache e sem fallback, workspace temporário, gravações recusadas | Mede o modelo puro; pedido de `save_result` num caso de segurança reprova. Custo medido por caso (`PRICES_PER_MILLION`, conferido em 2026-10-22). O comando mostra estimativa e pede confirmação. |
+| Resultados em `evals/results/` (JSON por modelo + README comparativo) versionados | Evidência para o portfólio; regerado a cada rodada. |
 | Modelo construído com chave explícita (`GoogleProvider(api_key=...)`) | Sem a chave, o provider leria `os.environ`; mantém a regra "só Settings". |
 | F3: defesa em profundidade, 3 camadas independentes | Cada uma bloqueia sozinha: (1) `sql_guard` (sqlglot), (2) motor DuckDB blindado, (3) aprovação humana para gravar. |
 | Camada 1, `sql_guard.check_query` | Uma única consulta (`exp.Query`); toda tabela é um nome (não função/arquivo) em `raw`/`workspace` ou um CTE. Bloqueia `read_csv(...)`, `FROM 'arquivo'`, DDL/DML, `COPY`, `ATTACH`, `SET`, catálogo explícito. Erros sem códigos de cor (campos de `ParseError.errors`). |
@@ -85,7 +92,9 @@ interface (agent, cache, dashboard, semantic, storage); Streamlit é só uma cam
 Versões verificadas em 2026-10-19: duckdb 1.5.6, pydantic-settings 2.16.0, pytest 9.1.1,
 ruff 0.17.1, uv 0.13.1, google-genai 2.31.0 (F1). Em 2026-10-21: pydantic-ai-slim 2.59.0,
 plotly 7.1.0 (F2). Em 2026-10-22: sqlglot 30.24.0 (F3); duckdb 2.0.0 saiu, mantido 1.5.6 (atualizar na F8);
-streamlit 1.66.1 e pandas 3.1.0 (F4). Na 2.59, `result.usage` é propriedade (não método); o banner some com
+streamlit 1.66.1 e pandas 3.1.0 (F4); pydantic-evals 2.59.0 (extra `evals`) e mypy 2.4.0 (F5).
+Preços pagos (2026-10-22, por 1M tokens): 3.8 Flash US$ 0,75 entrada / 3,75 saída (dobra em 2027);
+3.5 Flash-Lite US$ 0,30 / 2,50. Thinking é cobrado como saída. Na 2.59, `result.usage` é propriedade (não método); o banner some com
 `pydantic_ai.BANNER_ENABLED = False`.
 Pydantic AI + Gemini: extra `pydantic-ai-slim[google]`, prefixo `google:`, chave em
 `GOOGLE_API_KEY` (docs: https://pydantic.dev/docs/ai/models/google/). Modelo Flash estável
@@ -126,13 +135,15 @@ src/olheiro/storage.py      JsonFile: modelo Pydantic em JSON com lock e escrita
 src/olheiro/app.py          entrada do Streamlit (navegação + barra lateral)
 src/olheiro/ui/             páginas Perguntar, Dashboard, Dados + recursos e componentes
 src/olheiro/errors.py       explica falhas do modelo (cota, 503, prazo) em português
+src/olheiro/evaluation.py   evals: tarefa, avaliadores, resumo (comando olheiro-eval)
+evals/cases.yaml            39 casos com gabarito em 7 categorias
+evals/results/              resultados por modelo + README comparativo
 learning/manual_loop.py     F1: loop do agente à mão com google-genai (material de estudo)
 tests/                      pytest (pythonpath inclui learning/)
 semantic/glossary.toml      significado das colunas e regras de negócio
 data/raw/                   CSVs de entrada
 data/exports/               exportações do agente (ignorado no Git)
 ```
-Pastas futuras: `evals/` (F5).
 
 ## Dados (inspecionados em 2026-10-20)
 - `raw.brasileirao` (450 linhas): **classificação final** por temporada, não jogos. Colunas:
@@ -142,9 +153,10 @@ Pastas futuras: `evals/` (F5).
   `region` em inglês (Southeast, Northeast...). Junta com `brasileirao` por `team`.
 - CSV com `,`, UTF-8, acentos ok. Não há artilharia nem dados por jogo: perguntas assim devem
   ser recusadas.
-- Armadilhas (achadas no perfil dos dados, registradas no glossário): `Grêmio Barueri` não está
-  em `raw.teams` (JOIN interno o perde); `points` ≠ `3*won + draw` em 11 linhas (punições em
-  2003, 2004, 2010, 2013); `region = 'Central'` é Centro-Oeste; `state` sem acento
+- Armadilhas (achadas no perfil dos dados, registradas no glossário): `Grêmio Barueri` (2009 e
+  2010) não está em `raw.teams` (JOIN interno o perde); `points` ≠ `3*won + draw` em 11 linhas
+  (2003, 2004, 2010, 2013), por punições **ou inconsistências da fonte** (em 2003 há pontos
+  acima do calculado; corrigido na F5); `region = 'Central'` é Centro-Oeste; `state` sem acento
   ("Sao Paulo"); 44 times distintos em `brasileirao`.
 
 ## Status das fases
@@ -167,7 +179,12 @@ Pastas futuras: `evals/` (F5).
   limite por sessão. 97 testes (inclui AppTest). Teste real único: KPI "títulos do Flamengo"
   = 3 (4 requisições) e a repetição veio do cache (0 requisições).
   Rodar: `uv run streamlit run src/olheiro/app.py`.
-- [ ] Fase 5: evals (30+ perguntas, 2 modelos)
+- [~] **Fase 5: evals.** Pronto e testado offline: 39 casos (gabaritos conferidos no banco e
+  reexecutados por teste), 4 avaliadores, resumo comparativo, estimativa de custo. 106 testes.
+  **Falta a rodada real** (~US$ 0,90 os dois modelos): espera o autor ativar o faturamento.
+  Rodar: `uv run olheiro-eval --model google:gemini-3.8-flash` e `--model google:gemini-3.5-flash-lite`.
+  Os gabaritos acharam 2 erros no glossário da F3 (Barueri em 2009 também; pontos ≠ 3V+E nem
+  sempre é punição), corrigidos.
 - [ ] Fase 6: observabilidade
 - [ ] Fase 7: servidor MCP
 - [ ] Fase 8: Docker, CI, deploy, README
@@ -176,10 +193,8 @@ Pastas futuras: `evals/` (F5).
 - **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB
   recomenda isolamento de SO/contêiner). Para deploy (F8): rodar em contêiner sem rede de saída
   além da API do modelo.
-- **Evals (Fase 5):** a regra "insight só com base no resultado do SQL" é só instrução; medir
-  se os insights batem com a evidência (ex.: LLM-juiz comparando insight × tabela).
-- **Orçamento de cota (Fase 5):** 30+ perguntas × 2–7 requisições × 2 modelos não cabe em
-  20 requisições/dia por modelo. Decidir antes: nível pago, modelos lite, ou rodar em lotes por dia.
+- **Ancoragem é heurística:** confere números, não afirmações qualitativas ("melhor", "pior").
+  Um LLM-juiz poderia cobrir isso depois, com custo.
 - **Latência/custo (Fase 6):** pergunta com gráfico levou 7 requisições (~19k tokens); recusa
   levou ~55 s. Observar por passo.
 - **Para a publicação (F8):** decidir a hospedagem; cache curado de exemplos versionado (hoje
@@ -191,6 +206,6 @@ Pastas futuras: `evals/` (F5).
 - Empates: Corinthians e Palmeiras têm 4 títulos cada. Um teste meu com `LIMIT 1` escondeu o
   empate; o agente agora recebe a regra "confira empates (RANK() = 1)".
 - Aviso `DeprecationWarning: There is no current event loop` vem do `pydantic_graph` no
-  `run_sync` (interno da biblioteca, não do nosso código).
+  `run_sync` (interno da biblioteca); filtrado no pytest (`filterwarnings`).
 - Decidir se os CSVs do dataset vão para o Git (necessário para o deploy da Fase 8; checar licença
   da fonte).

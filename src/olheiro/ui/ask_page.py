@@ -126,16 +126,17 @@ def show_turn(index: int, turn: ChatTurn, resources: AppResources) -> None:
     with st.chat_message("user"):
         st.markdown(turn.question)
     with st.chat_message("assistant"):
-        if turn.error is not None:
-            st.error(turn.error, icon=":material/error:")
+        report = turn.report
+        if turn.error is not None or report is None:
+            st.error(turn.error or "Sem resposta.", icon=":material/error:")
             return
-        show_report(turn.report, key=f"turn-{index}")
-        if not (turn.report.output.answerable and turn.report.output.sql):
+        show_report(report, key=f"turn-{index}")
+        if not (report.output.answerable and report.output.sql):
             return
         if turn.pinned:
             st.caption(":material/push_pin: No dashboard")
         elif st.button("Fixar no dashboard", key=f"pin-{index}", icon=":material/push_pin:"):
-            resources.dashboard.pin(turn.question, turn.report)
+            resources.dashboard.pin(turn.question, report)
             turn.pinned = True
             st.toast("Fixado no dashboard", icon=":material/dashboard:")
             st.rerun()

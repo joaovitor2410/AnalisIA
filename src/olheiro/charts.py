@@ -57,6 +57,8 @@ def build_figure(spec: ChartSpec, evidence: QueryResult) -> go.Figure:
     """Monta a figura a partir do resultado real da consulta."""
     if spec.kind == "metric":
         return metric_figure(spec, evidence)
+    if spec.x is None:  # check_chart já recusa; aqui protege quem chamar sem validar
+        raise ChartError(f"Gráfico '{spec.kind}' precisa da coluna x.")
     x, y = evidence.column_values(spec.x), evidence.column_values(spec.y)
     trace = go.Bar(x=x, y=y) if spec.kind == "bar" else go.Scatter(x=x, y=y, mode="lines+markers")
     figure = go.Figure(trace)

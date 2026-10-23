@@ -8,7 +8,23 @@ Agente de IA analista de dados: recebe perguntas em português sobre dados tabul
 
 ```bash
 uv sync
-cp .env.example .env   # e preencha sua chave
+cp .env.example .env   # e preencha GOOGLE_API_KEY (Google AI Studio)
 uv run olheiro-load    # carrega data/raw/*.csv no DuckDB
 uv run olheiro-check   # confere se está tudo ok
+```
+
+## Usando
+
+```bash
+uv run streamlit run src/olheiro/app.py                 # app: Perguntar, Dashboard, Dados
+uv run olheiro-ask --verbose "Qual região tem mais títulos?"   # pelo terminal
+```
+
+## Qualidade
+
+```bash
+uv run pytest       # testes offline (modelo falso; não gasta cota)
+uv run ruff check . # lint
+uv run mypy         # tipos
+uv run olheiro-eval --model google:gemini-3.8-flash      # avaliação com o modelo real (pede confirmação de custo)
 ```

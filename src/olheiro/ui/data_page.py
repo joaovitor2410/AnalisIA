@@ -4,7 +4,7 @@ import duckdb
 import pandas as pd
 import streamlit as st
 
-from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG
+from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG, scalar
 from olheiro.semantic import Glossary, column_doc, columns_by_table
 from olheiro.tools import column_profile, query_rows
 from olheiro.ui.components import show_table
@@ -40,7 +40,7 @@ def show_table_overview(
     doc = glossary.tables.get(table)
     if doc is not None:
         st.markdown(doc.description)
-    (rows,) = con.execute(f'SELECT count(*) FROM {RAW_SCHEMA}."{table}"').fetchone()
+    rows = scalar(con, f'SELECT count(*) FROM {RAW_SCHEMA}."{table}"')
     st.caption(f"{rows} linhas · {len(columns)} colunas")
     st.dataframe(
         pd.DataFrame(

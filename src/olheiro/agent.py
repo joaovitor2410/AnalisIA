@@ -132,7 +132,9 @@ REQUEST_TIMEOUT_SECONDS = 60
 
 # O modelo não é fixado aqui: vem do .env na hora de rodar (ou de um modelo falso nos testes).
 # DeferredToolRequests na saída permite pausar a execução para pedir aprovação ao usuário.
-agent = Agent(
+# Saída em união: os parâmetros de tipo precisam ser explícitos (senão o mypy assume str).
+type AgentOutput = AnalysisAnswer | DeferredToolRequests
+agent: Agent[AgentDeps, AgentOutput] = Agent(
     output_type=[AnalysisAnswer, DeferredToolRequests],
     deps_type=AgentDeps,
     instructions=INSTRUCTIONS,
@@ -187,9 +189,7 @@ def save_result(ctx: RunContext[AgentDeps], name: str, query: str) -> dict[str, 
 
 
 @agent.output_validator
-def validate_evidence(
-    ctx: RunContext[AgentDeps], output: AnalysisAnswer | DeferredToolRequests
-) -> AnalysisAnswer | DeferredToolRequests:
+def validate_evidence(ctx: RunContext[AgentDeps], output: AgentOutput) -> AgentOutput:
     """Só aceita a resposta se a evidência se sustenta; senão o modelo recebe o motivo e corrige."""
     if isinstance(output, DeferredToolRequests) or not output.answerable:
         return output
@@ -229,7 +229,7 @@ def resume(
 
 
 def to_outcome(
-    result: AgentRunResult[AnalysisAnswer | DeferredToolRequests], deps: AgentDeps, usage: RunUsage
+    result: AgentRunResult[AgentOutput], deps: AgentDeps, usage: RunUsage
 ) -> AgentReport | PendingApproval:
     output = result.output
     if isinstance(output, DeferredToolRequests):

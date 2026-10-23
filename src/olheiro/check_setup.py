@@ -11,7 +11,14 @@ from dataclasses import dataclass
 import duckdb
 
 from olheiro.config import PROJECT_ROOT, PROVIDER_KEY_FIELDS, Settings, get_settings
-from olheiro.db import RAW_SCHEMA, connect, connect_agent, find_csv_files, table_name_from_file
+from olheiro.db import (
+    RAW_SCHEMA,
+    connect,
+    connect_agent,
+    find_csv_files,
+    scalar,
+    table_name_from_file,
+)
 from olheiro.semantic import check_glossary, load_glossary
 
 MIN_PYTHON = (3, 13)
@@ -72,8 +79,7 @@ def check_tables(settings: Settings) -> CheckResult:
             "SELECT table_name FROM duckdb_tables() WHERE schema_name = ?", [RAW_SCHEMA]
         ).fetchall()
         found = {
-            name: con.execute(f'SELECT count(*) FROM {RAW_SCHEMA}."{name}"').fetchone()[0]
-            for (name,) in names
+            name: scalar(con, f'SELECT count(*) FROM {RAW_SCHEMA}."{name}"') for (name,) in names
         }
     missing = expected - found.keys()
     empty = [name for name, size in found.items() if size == 0]

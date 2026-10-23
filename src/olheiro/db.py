@@ -11,6 +11,7 @@ import sys
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import duckdb
 
@@ -41,6 +42,15 @@ class LoadedTable:
     source: Path
     row_count: int
     column_count: int
+
+
+def scalar(con: duckdb.DuckDBPyConnection, sql: str, params: list[Any] | None = None) -> Any:
+    """Primeiro valor da primeira linha (ex.: um count). Consultas assim sempre devolvem linha;
+    se não devolverem, é erro de programação, e falhar aqui é melhor que um TypeError adiante."""
+    row = con.execute(sql, params or []).fetchone()
+    if row is None:
+        raise ValueError(f"A consulta não devolveu linha: {sql}")
+    return row[0]
 
 
 def table_name_from_file(path: Path) -> str:
@@ -101,7 +111,7 @@ def load_csv(con: duckdb.DuckDBPyConnection, csv_path: Path) -> LoadedTable:
         f'CREATE TABLE {RAW_SCHEMA}."{name}" AS SELECT * FROM read_csv(?)',
         [str(csv_path)],
     )
-    row_count = con.execute(f'SELECT count(*) FROM {RAW_SCHEMA}."{name}"').fetchone()[0]
+    row_count = scalar(con, f'SELECT count(*) FROM {RAW_SCHEMA}."{name}"')
     column_count = len(con.execute(f'DESCRIBE {RAW_SCHEMA}."{name}"').fetchall())
     return LoadedTable(name, csv_path, row_count, column_count)
 

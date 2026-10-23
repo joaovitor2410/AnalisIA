@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import duckdb
 
-from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG
+from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG, scalar
 from olheiro.sql_guard import UnsafeQueryError, check_query
 
 # Mais que isso enche o contexto do modelo sem ajudar a responder; ele deve agregar ou usar LIMIT.
@@ -171,10 +171,11 @@ def check_save_request(con: duckdb.DuckDBPyConnection, name: str, query: str) ->
     """
     if not TABLE_NAME.fullmatch(name):
         raise UnsafeQueryError(f"Nome '{name}' inválido: use snake_case (ex.: campeoes_2019).")
-    exists = con.execute(
+    exists = scalar(
+        con,
         "SELECT count(*) FROM duckdb_tables() WHERE database_name = ? AND table_name = ?",
         [WORKSPACE_CATALOG, name],
-    ).fetchone()[0]
+    )
     if exists:
         raise UnsafeQueryError(f"{WORKSPACE_CATALOG}.{name} já existe: escolha outro nome.")
     return check_query(query).sql(dialect="duckdb")
@@ -186,7 +187,7 @@ def save_result(con: duckdb.DuckDBPyConnection, name: str, query: str) -> dict[s
         safe_query = check_save_request(con, name, query)
         with interrupt_after(con, QUERY_TIMEOUT_SECONDS):
             con.execute(f"CREATE TABLE {WORKSPACE_CATALOG}.{name} AS {safe_query}")
-        count = con.execute(f"SELECT count(*) FROM {WORKSPACE_CATALOG}.{name}").fetchone()[0]
+        count = scalar(con, f"SELECT count(*) FROM {WORKSPACE_CATALOG}.{name}")
     except UnsafeQueryError as error:
         return {"error": f"Pedido recusado: {error}"}
     except duckdb.Error as error:
