@@ -1,12 +1,21 @@
 """Testes da carga de CSVs no DuckDB (usam arquivos temporários, não os dados reais)."""
 
+import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
 import duckdb
 import pytest
 
-from olheiro.db import connect, connect_agent, load_raw_dir, table_name_from_file
+from olheiro.db import (
+    WorkspaceInUseError,
+    connect,
+    connect_agent,
+    load_raw_dir,
+    scalar,
+    table_name_from_file,
+)
 
 
 @pytest.mark.parametrize(
@@ -96,3 +105,59 @@ def test_agent_connection_blocks_disk_network_and_config_changes(
     """Camada 2: mesmo que o validador de SQL falhe, o motor recusa."""
     with pytest.raises(duckdb.Error):
         agent_con.execute(sql)
+
+
+def test_workspace_lock_is_explained_and_failed_connection_releases_raw(
+    tmp_path: Path, raw_dir: Path
+) -> None:
+    database, workspace = tmp_path / "test.duckdb", tmp_path / "workspace.duckdb"
+    with connect(database) as con:
+        load_raw_dir(con, raw_dir)
+    script = (
+        "import duckdb, sys\n"
+        "with duckdb.connect(sys.argv[1]) as con:\n"
+        "    print('ready', flush=True)\n"
+        "    sys.stdin.read(1)\n"
+    )
+    # Um processo real segura o workspace; simular IOException não testaria o lock do SO.
+    holder = subprocess.Popen(
+        [sys.executable, "-c", script, str(workspace)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert holder.stdout is not None
+        assert holder.stdout.readline().strip() == "ready"
+        with pytest.raises(WorkspaceInUseError) as caught:
+            connect_agent(database, workspace)
+        assert caught.value.path == workspace
+        assert caught.value.owner_pid == holder.pid
+        assert "WORKSPACE_PATH" in str(caught.value)
+        # Sem fechar a conexão parcial, o raw continuaria anexado em leitura e esta
+        # abertura em escrita falharia por configurações conflitantes no mesmo processo.
+        with connect(database) as con:
+            assert scalar(con, "SELECT count(*) FROM raw.jogos") == 2
+    finally:
+        try:
+            holder.communicate("\n", timeout=10)
+        except subprocess.TimeoutExpired:
+            holder.terminate()
+            holder.communicate(timeout=10)
+    with connect_agent(database, workspace) as con:
+        assert scalar(con, "SELECT count(*) FROM raw.jogos") == 2
+
+
+def test_other_workspace_io_errors_are_not_misreported_as_lock_conflicts(
+    tmp_path: Path, raw_dir: Path
+) -> None:
+    database, workspace = tmp_path / "test.duckdb", tmp_path / "corrupt.duckdb"
+    with connect(database) as con:
+        load_raw_dir(con, raw_dir)
+    workspace.write_bytes(b"arquivo invalido")
+    with pytest.raises(duckdb.IOException):
+        connect_agent(database, workspace)
+    assert workspace.read_bytes() == b"arquivo invalido"
+    with connect(database) as con:
+        assert scalar(con, "SELECT count(*) FROM raw.jogos") == 2

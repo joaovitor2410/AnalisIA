@@ -13,6 +13,7 @@ import duckdb
 from olheiro.config import PROJECT_ROOT, PROVIDER_KEY_FIELDS, Settings, get_settings
 from olheiro.db import (
     RAW_SCHEMA,
+    WorkspaceInUseError,
     connect,
     connect_agent,
     find_csv_files,
@@ -99,6 +100,8 @@ def check_agent_connection(settings: Settings) -> CheckResult:
             con.execute("SELECT * FROM read_csv('/etc/hosts')")
     except duckdb.PermissionException:
         return CheckResult(True, label, "raw somente leitura, sem acesso a disco/rede")
+    except WorkspaceInUseError as error:
+        return CheckResult(False, label, str(error))
     except duckdb.Error as error:
         return CheckResult(False, label, f"erro ao abrir: {error}")
     return CheckResult(False, label, "acesso a arquivos NÃO está bloqueado")

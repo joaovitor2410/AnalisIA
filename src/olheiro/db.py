@@ -34,6 +34,22 @@ AGENT_HARDENING = (
 )
 
 
+class WorkspaceInUseError(RuntimeError):
+    """Outro processo mantém o lock de escrita do workspace."""
+
+    def __init__(self, path: Path, detail: str) -> None:
+        self.path = path
+        match = re.search(r"\(PID (\d+)\)", detail)
+        self.owner_pid = int(match.group(1)) if match else None
+        owner = f" (PID {self.owner_pid})" if self.owner_pid is not None else ""
+        super().__init__(
+            f"O workspace {path} já está em uso por outro processo{owner}. "
+            "Encerre a instância anterior do Olheiro com Ctrl+C no terminal onde ela foi "
+            "iniciada e tente novamente. Para executar app, CLI ou MCP simultaneamente, "
+            "configure WORKSPACE_PATH com um arquivo diferente para cada processo."
+        )
+
+
 @dataclass(frozen=True)
 class LoadedTable:
     """Resumo de uma tabela carregada."""
@@ -79,11 +95,20 @@ def connect_agent(db_path: Path, workspace_path: Path) -> duckdb.DuckDBPyConnect
     """
     workspace_path.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(":memory:")
-    con.execute(f"ATTACH '{db_path}' AS {LAKE_CATALOG} (READ_ONLY)")
-    con.execute(f"USE {LAKE_CATALOG}")  # "raw.teams" resolve sem prefixar o catálogo
-    con.execute(f"ATTACH '{workspace_path}' AS {WORKSPACE_CATALOG}")
-    for statement in AGENT_HARDENING:
-        con.execute(statement)
+    try:
+        con.execute(f"ATTACH '{db_path}' AS {LAKE_CATALOG} (READ_ONLY)")
+        con.execute(f"USE {LAKE_CATALOG}")  # "raw.teams" resolve sem prefixar o catálogo
+        try:
+            con.execute(f"ATTACH '{workspace_path}' AS {WORKSPACE_CATALOG}")
+        except duckdb.IOException as error:
+            if "Could not set lock on file" in str(error):
+                raise WorkspaceInUseError(workspace_path, str(error)) from error
+            raise
+        for statement in AGENT_HARDENING:
+            con.execute(statement)
+    except Exception:
+        con.close()  # uma falha no ATTACH não pode manter o banco bruto anexado
+        raise
     return con
 
 

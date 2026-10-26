@@ -16,7 +16,7 @@ from olheiro.cache import AnswerCache
 from olheiro.charts import ChartSpec
 from olheiro.config import PROJECT_ROOT
 from olheiro.dashboard import DashboardItem
-from olheiro.db import connect, load_raw_dir
+from olheiro.db import WorkspaceInUseError, connect, load_raw_dir
 from olheiro.ui import resources
 
 models.ALLOW_MODEL_REQUESTS = False
@@ -99,6 +99,26 @@ def test_data_page_shows_tables_glossary_and_profile(app_env: Path) -> None:
     assert [tab.label for tab in app.tabs][:2] == ["raw.brasileirao", "raw.teams"]
     assert "Classificação final" in app.markdown[0].value  # descrição vinda do glossário
     assert app.selectbox(key="profile-brasileirao").value == "season"
+
+
+def test_workspace_conflict_has_a_clear_message_and_recovers_on_retry(
+    app_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = resources.connect_agent
+
+    def locked(*args: object) -> None:
+        raise WorkspaceInUseError(app_env / "workspace.duckdb", "Conflicting lock (PID 12345)")
+
+    monkeypatch.setattr(resources, "connect_agent", locked)
+    app = AppTest.from_file(str(PROJECT_ROOT / "src/olheiro/app.py"), default_timeout=20).run()
+    assert not app.exception
+    assert app.title[0].value == "Workspace em uso"
+    assert "PID 12345" in app.error[0].value
+    assert "WORKSPACE_PATH" in app.error[0].value
+    monkeypatch.setattr(resources, "connect_agent", original)
+    app.button(key="retry-workspace").click().run()
+    assert not app.exception and not app.error
+    assert app.title[0].value == "Perguntar aos dados"
 
 
 def test_cached_question_is_answered_without_the_model(app_env: Path) -> None:

@@ -98,3 +98,18 @@ def test_simultaneous_first_start_does_not_replace_a_new_database(
     assert ensure_database(settings) is False
     with connect(settings.duckdb_path, read_only=True) as con:
         assert scalar(con, "SELECT n FROM preserved") == 42
+
+
+def test_launcher_rejects_a_locked_workspace_before_starting_another_server(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert ensure_database(settings) is True
+    monkeypatch.setattr(launcher, "get_settings", lambda: settings)
+
+    def locked(*args: object) -> None:
+        raise launcher.WorkspaceInUseError(settings.workspace_path, "Conflicting lock (PID 12345)")
+
+    monkeypatch.setattr(launcher, "connect_agent", locked)
+    monkeypatch.setattr(launcher.os, "execv", lambda *args: pytest.fail("Iniciou outro servidor"))
+    with pytest.raises(SystemExit, match="PID 12345"):
+        launcher.main([])

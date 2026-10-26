@@ -30,6 +30,17 @@ Outra porta: `OLHEIRO_PORT=8502 docker compose up --detach --wait`.
 Logs: `docker compose logs --follow app egress`.
 Encerrar preservando os dados: `docker compose down`.
 
+### Workspace em uso ao rodar localmente
+
+Fora do Docker, uma instância anterior do app, CLI ou MCP pode manter o arquivo
+`data/workspace.duckdb` aberto. O DuckDB permite um processo escritor por arquivo; mudar só
+a porta do Streamlit não separa o workspace. Encerre a instância anterior com `Ctrl+C` no
+terminal onde foi iniciada e use `uv run olheiro-app`. Não apague o banco para liberar o lock.
+O launcher explica o conflito antes de iniciar outro servidor; uma corrida posterior aparece
+na interface com o botão **Tentar novamente**. Reinicie o processo após atualizar módulos Python.
+Para processos simultâneos, configure caminhos de workspace e arquivos de estado separados;
+as tabelas salvas pertencem ao workspace de cada processo.
+
 O health HTTP prova que o Streamlit responde. O smoke test verifica também abertura da base,
 SQL, blindagem, filesystem, usuário, AppTest e regras de rede. Execute-o numa instância recém
 iniciada, sem sessões ativas no navegador: ele usa um processo separado para o workspace,

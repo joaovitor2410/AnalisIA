@@ -6,6 +6,7 @@ Rodar:
 
 import streamlit as st
 
+from olheiro.db import WorkspaceInUseError
 from olheiro.ui.ask_page import ask_page
 from olheiro.ui.dashboard_page import dashboard_page
 from olheiro.ui.data_page import data_page
@@ -32,8 +33,15 @@ def show_sidebar() -> None:
 
 
 st.set_page_config(page_title="Olheiro", page_icon=":material/query_stats:", layout="wide")
-with st.sidebar:
-    show_sidebar()
+try:
+    with st.sidebar:
+        show_sidebar()
+except WorkspaceInUseError as error:
+    st.title("Workspace em uso")
+    st.error(str(error), icon=":material/lock:")
+    if st.button("Tentar novamente", key="retry-workspace"):
+        st.rerun()
+    st.stop()
 st.navigation(
     [
         st.Page(ask_page, title="Perguntar", icon=":material/chat:", default=True),

@@ -29,7 +29,7 @@ from olheiro.agent import (
 from olheiro.cache import AnswerCache, ask_with_cache
 from olheiro.charts import build_figure, save_figure
 from olheiro.config import get_settings
-from olheiro.db import WORKSPACE_CATALOG, connect_agent
+from olheiro.db import WORKSPACE_CATALOG, WorkspaceInUseError, connect_agent
 from olheiro.errors import explain_model_failure
 from olheiro.semantic import load_glossary
 from olheiro.telemetry import RunLog, tracked
@@ -100,7 +100,11 @@ def main(argv: list[str] | None = None) -> None:
     glossary = load_glossary(settings.glossary_path)
     setup_tracing(settings)
     runs = RunLog(settings.runs_path)
-    with connect_agent(settings.duckdb_path, settings.workspace_path) as con:
+    try:
+        con = connect_agent(settings.duckdb_path, settings.workspace_path)
+    except WorkspaceInUseError as error:
+        sys.exit(str(error))
+    with con:
         deps = AgentDeps(con, glossary)
         try:
             with tracked(runs, args.question, "cli") as run:

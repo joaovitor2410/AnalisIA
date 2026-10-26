@@ -14,7 +14,7 @@ import duckdb
 
 from olheiro.check_setup import check_glossary_sync, check_tables
 from olheiro.config import Settings, get_settings
-from olheiro.db import connect, find_csv_files, load_raw_dir
+from olheiro.db import WorkspaceInUseError, connect, connect_agent, find_csv_files, load_raw_dir
 
 
 def validate_database(settings: Settings) -> None:
@@ -52,9 +52,14 @@ def main(argv: list[str] | None = None) -> None:
     args = sys.argv[1:] if argv is None else argv
     if "--help" not in args:
         try:
-            if ensure_database(get_settings()):
+            settings = get_settings()
+            if ensure_database(settings):
                 print("Base de demonstração inicializada a partir dos CSVs.", flush=True)
-        except (OSError, ValueError, duckdb.Error) as error:
+            # Detecta a disputa antes de subir outra instância do servidor. Fecha a conexão
+            # imediatamente; o app repete a verificação se houver corrida entre processos.
+            with connect_agent(settings.duckdb_path, settings.workspace_path):
+                pass
+        except (OSError, ValueError, duckdb.Error, WorkspaceInUseError) as error:
             sys.exit(f"Não foi possível iniciar o Olheiro: {error}")
     # Substitui o processo: sinais de parada chegam ao servidor, inclusive no Docker.
     app_path = Path(__file__).with_name("app.py")
