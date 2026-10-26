@@ -1,0 +1,10 @@
+FROM debian:trixie-slim
+RUN apt-get update && \
+    apt-get install --yes --no-install-recommends squid ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+COPY deploy/squid.conf /etc/squid/squid.conf
+RUN squid -k parse -f /etc/squid/squid.conf
+USER proxy
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=12 \
+    CMD ["squid", "-k", "check", "-f", "/etc/squid/squid.conf"]
+CMD ["squid", "-N", "-d", "1", "-f", "/etc/squid/squid.conf"]

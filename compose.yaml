@@ -1,0 +1,56 @@
+name: olheiro
+
+services:
+  app:
+    build: .
+    image: olheiro:local
+    ports:
+      - "127.0.0.1:${OLHEIRO_PORT:-8501}:8501"
+    environment:
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      OLHEIRO_MODEL: ${OLHEIRO_MODEL:-google:gemini-3.8-flash}
+      OLHEIRO_FALLBACK_MODEL: ${OLHEIRO_FALLBACK_MODEL:-google:gemini-3.5-flash-lite}
+      OLHEIRO_SESSION_QUESTION_LIMIT: ${OLHEIRO_SESSION_QUESTION_LIMIT:-5}
+      OLHEIRO_TRACING: file
+      OLHEIRO_TRACE_CONTENT: "false"
+      HTTPS_PROXY: http://egress:3128
+      HTTP_PROXY: http://egress:3128
+      NO_PROXY: localhost,127.0.0.1
+    volumes:
+      - state:/state
+    read_only: true
+    tmpfs:
+      - /tmp:size=268435456,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
+    depends_on:
+      egress:
+        condition: service_healthy
+    networks: [isolated]
+
+  egress:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.egress
+    image: olheiro-egress:local
+    read_only: true
+    tmpfs:
+      - /tmp:size=33554432,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    mem_limit: 256m
+    pids_limit: 64
+    networks: [isolated, outbound]
+
+networks:
+  isolated:
+    internal: true
+  outbound: {}
+
+volumes:
+  state: {}

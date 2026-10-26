@@ -1,0 +1,61 @@
+name: Qualidade e contêiner
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OLHEIRO_TRACING: "off"
+      GOOGLE_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.13.1"
+          enable-cache: true
+      - run: uv python install
+      - run: uv sync --locked
+      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked mypy
+      - run: uv run --locked pytest -q
+      - run: uv build
+
+  container:
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validar configuração
+        run: docker compose config --quiet
+      - name: Construir e iniciar sem chave de API
+        run: docker compose up --build --detach --wait --wait-timeout 120
+      - name: Verificar a aplicação real e isolamento
+        run: docker compose exec -T app python deploy/smoke.py
+      - name: Verificar health HTTP
+        run: curl --fail --retry 3 http://127.0.0.1:8501/_stcore/health
+      - name: Exibir logs em caso de falha
+        if: failure()
+        run: docker compose logs --no-color --tail 150
+      - name: Encerrar recursos temporários do runner
+        if: always()
+        run: docker compose down --volumes

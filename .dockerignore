@@ -1,0 +1,22 @@
+# Contexto por lista de inclusão: segredos, bancos locais e logs não entram no build.
+*
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!.python-version
+!README.md
+!LICENSE
+!src/
+!src/**
+!semantic/
+!semantic/**
+!data/
+!data/raw/
+!data/raw/*.csv
+!data/raw/SOURCE.md
+!deploy/
+!deploy/**
+**/__pycache__
+**/*.pyc
+**/.env
+**/.env.*

@@ -7,6 +7,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+dist/
 
 # Banco gerado a partir dos CSVs (pode ser recriado com `uv run olheiro-load`)
 data/*.duckdb

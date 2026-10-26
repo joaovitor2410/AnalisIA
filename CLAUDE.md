@@ -13,6 +13,8 @@ Destino: integrar ao portfólio do autor como ferramenta de consultas, buscas, g
 dashboards. **Onde hospedar ainda não foi decidido** (opções: app Streamlit publicado + link,
 API + frontend no site do portfólio, ou só local + vídeo). Por isso: núcleo independente de
 interface (agent, cache, dashboard, semantic, storage); Streamlit é só uma camada fina.
+Em 2026-10-26, o autor escolheu **preparar Docker e CI primeiro (F8A)**; publicação online
+fica para a F8B. Autorizou e recebeu o push da F7 (`4f667ce`) em `origin/main`.
 - Funções: chat analítico com evidência e passos do agente; dashboard (fixar respostas, KPIs);
   explorador de dados; perguntas prontas via cache. Upload de CSV do visitante: fora por ora.
 - Ideia central: o LLM **cria** a análise uma vez; dashboard e cache **reexecutam** o SQL
@@ -95,6 +97,12 @@ interface (agent, cache, dashboard, semantic, storage); Streamlit é só uma cam
 | MCP: lifespan + um cursor por chamada | Fábrica não abre banco nem exige chave; lifespan abre/fecha conexão blindada, glossário, cache e logs. Handlers síncronos rodam nos workers do SDK: `ask.run_sync` fica fora do loop assíncrono. Cada chamada cria/fecha `session_cursor`, inclusive em erro; concorrência testada. |
 | MCP: recurso `olheiro://context`, prompt `analyze_data` e saída estruturada | Contexto relê o catálogo a cada acesso. SDK 2.3 não injeta `Context` em recurso estático: estado fica numa closure da fábrica, preenchida/limpa pelo lifespan, sem global. Tabelas JSON preservam ordem e colunas repetidas; datas/decimais viram strings, corte indicado por `truncated`. Gráfico enviado como `ChartSpec`, sem arquivo HTML. |
 | MCP: erros de execução usam `ToolError` | SQL proibido, coluna inválida e falha do modelo chegam como `isError=true`; recusa por dados ausentes continua resultado normal (`answerable=false`). `tracked(..., source="mcp")` integra perguntas à Operação (origem MCP selecionada por padrão); SQL direto/perfis/recursos/prompts não contam como perguntas ao agente. |
+| F8A: `olheiro-app` separa a entrada web do MCP | Inicia Streamlit por caminho absoluto, encaminha opções e usa `execv` para sinais chegarem ao servidor. Carga inicial só se a base faltar; valida tabelas e glossário. Publica arquivo completo por link atômico sem sobrescrever uma base criada simultaneamente; falhas não deixam banco parcial. |
+| F8A: Docker em duas etapas + Compose local | Python 3.13.16 e uv 0.13.1; dependências pelo lock, sem dev no runtime. Instalação editável preserva a raiz dos recursos em `/app/src`, que fica em leitura. Base bruta preparada no build; estado em volume `/state`, temporários em tmpfs. Sem root, capabilities removidas, sem novos privilégios, limites de recursos e interface em loopback. `.dockerignore` por lista de inclusão exclui segredos, bancos e logs locais. |
+| F8A: rede interna + proxy Squid | Aplicação só na rede `internal`; proxy alcança a rede externa e só permite CONNECT para `generativelanguage.googleapis.com:443`. Sem inspeção TLS; SDK Gemini usa `trust_env=True`. Configuração ainda precisa de build/smoke real em Docker; não confundir revisão estática com isolamento validado. |
+| F8A: GitHub Actions de qualidade e contêiner | Ações por SHA, permissão contents:read, sem segredos nem chamadas ao Gemini. Ruff, format, mypy, pytest, wheel/sdist; depois build/health e smoke da base, AppTest, usuário, escrita e rede. Não publica imagem nem faz deploy. Só executará remotamente após push liberado pelo autor. |
+| F8A: DuckDB segue `>=1.5.6,<2` | Reavaliada a atualização prevista: 2.0 muda o formato padrão dos arquivos. Separar a migração com cópias e retorno do empacotamento evita alterar os bancos do autor sem validação própria. Não houve mudança da versão instalada, 1.5.6. |
+| F8A: limite de sessão 0 suportado no app completo | Antes a barra lateral dividia por zero. Agora mostra o limite esgotado e permite cache; configuração rejeita valores negativos. AppTest cobre ausência de limite, 0 e 5. |
 | F3: defesa em profundidade, 3 camadas independentes | Cada uma bloqueia sozinha: (1) `sql_guard` (sqlglot), (2) motor DuckDB blindado, (3) aprovação humana para gravar. |
 | Camada 1, `sql_guard.check_query` | Uma única consulta (`exp.Query`); toda tabela é um nome (não função/arquivo) em `raw`/`workspace` ou um CTE. Bloqueia `read_csv(...)`, `FROM 'arquivo'`, DDL/DML, `COPY`, `ATTACH`, `SET`, catálogo explícito. Erros sem códigos de cor (campos de `ParseError.errors`). |
 | Camada 2, `db.connect_agent` | Conexão `:memory:` com `ATTACH olheiro.duckdb (READ_ONLY)` + `USE lake`, `ATTACH workspace.duckdb`, `enable_external_access=false`, autoload/autoinstall de extensões desligados, `memory_limit=1GB`, `lock_configuration=true` (por último). Testado: escrever em raw, ler/gravar arquivo, ATTACH, INSTALL e destravar config falham no motor. |
@@ -111,6 +119,8 @@ Em 2026-10-26: `mcp` e `mcp-types` **2.3.0** (F7; requisito `mcp>=2.3,<3`, vers�
 `uv.lock`). Documentação oficial atual usa `MCPServer`, não `FastMCP` da linha 1.x:
 https://py.sdk.modelcontextprotocol.io/ (ferramentas, recursos, erros, lifespan, testes e hosts).
 Referências e instruções de conexão em `docs/mcp.md`.
+F8A (2026-10-26): uv 0.13.1 mantido no Docker/CI; Python 3.13.16 na imagem, mesmo ambiente
+local. Referências de uv, Compose, Squid e migração DuckDB em `docs/deployment.md`.
 Preços pagos (2026-10-22, por 1M tokens): 3.8 Flash US$ 0,75 entrada / 3,75 saída (dobra em 2027);
 3.5 Flash-Lite US$ 0,30 / 2,50. Thinking é cobrado como saída. Na 2.59, `result.usage` é propriedade (não método); o banner some com
 `pydantic_ai.BANNER_ENABLED = False`.
@@ -158,8 +168,14 @@ src/olheiro/pricing.py      preço por modelo e custo equivalente
 src/olheiro/tracing.py      OpenTelemetry: setup, exportador JSONL, leitura de um trace
 src/olheiro/telemetry.py    RunRecord, RunLog e tracked() (registro de execuções)
 src/olheiro/mcp_server.py   servidor MCP stdio: SQL, perfil, perguntas, contexto e prompt
+src/olheiro/launcher.py     entrada web olheiro-app, validação/carga inicial sem sobrescrever
 examples/mcp_client.py     cliente stdio de demonstração (SQL sem cota; --question para agente)
 docs/mcp.md                contrato MCP, limites e conexão ao Claude Desktop/Code
+Dockerfile / compose.yaml  imagem e execução local com volume e rede interna
+deploy/                    Dockerfile/config Squid e smoke do runtime sem Gemini
+.github/workflows/ci.yml   qualidade, build do pacote e verificação dos contêineres
+docs/deployment.md          operação, validação e limites da entrega F8A
+data/raw/SOURCE.md          fonte Kaggle, condições informadas e hashes dos CSVs
 evals/cases.yaml            39 casos com gabarito em 7 categorias
 evals/results/              resultados por modelo + README comparativo
 learning/manual_loop.py     F1: loop do agente à mão com google-genai (material de estudo)
@@ -223,7 +239,21 @@ data/exports/               exportações do agente (ignorado no Git)
   **22 temporadas**, sem Gemini. Teste real único via cliente MCP (sem cache): recusa de
   artilharia, **1 requisição em 5,1 s**, `gemini-3.8-flash`, registro ligado a 3 spans.
   Rodar: `uv run olheiro-mcp`; testar sem cota: `uv run python examples/mcp_client.py`.
-- [ ] Fase 8: Docker, CI, deploy, README
+- [~] **Fase 8: Docker, CI, deploy, README.** Dividida conforme escolha do autor:
+  - **F8A preparada:** Dockerfile em duas etapas, Compose local com saída restrita via Squid,
+    workflow CI de qualidade e contêiner, README refeito, origem dos dados e guia de operação.
+    `olheiro-app` inicializa a base com segurança; limite zero da sessão corrigido.
+    **147 testes offline**, lint/format/mypy; build wheel/sdist e conteúdo dos pacotes verificados
+    (sem `.env`/bancos). Ambiente temporário com `uv sync --locked --no-dev`: app iniciou pelo
+    AppTest **sem pytest e sem chave**. Compose validado contra schema oficial, CI validada
+    com actionlint **1.7.12** e sintaxe shell conferida. Nenhuma chamada
+    extra ao Gemini nesta etapa de infraestrutura.
+    **Falta validar build/runtime Docker:** Docker não está instalado neste Mac. A CI inclui
+    essa validação, mas só rodará remotamente após o próximo push aprovado. Não foi executada
+    nem apresentada como aprovada. Comandos: `docker compose up --build --detach --wait` e
+    `docker compose exec -T app python deploy/smoke.py`.
+  - **F8B pendente:** hospedagem, isolamento por visitante, exemplos curados, condições de
+    redistribuição dos dados, migração DuckDB 2.x e publicação online. Não autorizada nesta etapa.
 
 ## Pendências / em aberto
 - **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB
@@ -247,5 +277,9 @@ data/exports/               exportações do agente (ignorado no Git)
   empate; o agente agora recebe a regra "confira empates (RANK() = 1)".
 - Aviso `DeprecationWarning: There is no current event loop` vem do `pydantic_graph` no
   `run_sync` (interno da biblioteca); filtrado no pytest (`filterwarnings`).
-- Decidir se os CSVs do dataset vão para o Git (necessário para o deploy da Fase 8; checar licença
-  da fonte).
+- **Origem dos CSVs registrada (F8A):** os arquivos já estavam versionados. Fonte indicada pelo
+  autor: Kaggle, Lucas Yukio Imafuko, Brazilian Football Dataset [2003 - 2024]. API pública
+  consultada em 2026-10-26: `licenseName="Other (specified in description)"`; descrição atribui
+  à CBF e informa finalidade educacional. Não foi identificada licença aberta específica;
+  confirmar redistribuição antes de publicar demo/imagem. MIT do código não cobre essa decisão.
+  Link, detalhes e SHA-256 em `data/raw/SOURCE.md`.

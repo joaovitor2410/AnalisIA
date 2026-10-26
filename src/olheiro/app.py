@@ -27,7 +27,8 @@ def show_sidebar() -> None:
     limit = resources.settings.olheiro_session_question_limit
     if limit is not None:
         used = st.session_state.get("model_questions", 0)
-        st.progress(min(used / limit, 1.0), text=f"Perguntas livres: {used} de {limit}")
+        progress = min(used / limit, 1.0) if limit else 1.0
+        st.progress(progress, text=f"Perguntas livres: {used} de {limit}")
 
 
 st.set_page_config(page_title="Olheiro", page_icon=":material/query_stats:", layout="wide")

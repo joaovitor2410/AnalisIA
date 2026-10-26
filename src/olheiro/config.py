@@ -7,7 +7,7 @@ Assim, trocar de modelo/provedor é só mudar o .env.
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # src/olheiro/config.py -> parents[2] é a raiz do projeto
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     dashboard_path: Path = Path("data/dashboard.json")
     # Perguntas que vão ao modelo por sessão do app (respostas do cache não contam).
     # Vazio = sem limite (uso local); numa demo pública, protege a cota do nível gratuito.
-    olheiro_session_question_limit: int | None = None
+    olheiro_session_question_limit: int | None = Field(default=None, ge=0)
     # Observabilidade (F6). Traces OpenTelemetry: off, file (traces_path) ou otlp (backend).
     olheiro_tracing: Literal["off", "file", "otlp"] = "file"
     olheiro_otlp_endpoint: str = "http://localhost:4318/v1/traces"

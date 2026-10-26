@@ -79,7 +79,14 @@ def run_data_page() -> None:
     data_page()
 
 
-def test_full_app_starts_on_the_ask_page(app_env: Path) -> None:
+@pytest.mark.parametrize("limit", [None, "0", "5"])
+def test_full_app_starts_on_the_ask_page(
+    app_env: Path, monkeypatch: pytest.MonkeyPatch, limit: str | None
+) -> None:
+    if limit is not None:
+        monkeypatch.setenv("OLHEIRO_SESSION_QUESTION_LIMIT", limit)
+    else:
+        monkeypatch.delenv("OLHEIRO_SESSION_QUESTION_LIMIT", raising=False)
     app = AppTest.from_file(str(PROJECT_ROOT / "src" / "olheiro" / "app.py"), default_timeout=20)
     app.run()
     assert not app.exception
