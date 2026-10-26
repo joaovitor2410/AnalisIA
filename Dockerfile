@@ -10,6 +10,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project
 COPY src/ src/
 COPY semantic/ semantic/
+COPY demo/ demo/
 COPY data/raw/ data/raw/
 COPY deploy/smoke.py deploy/smoke.py
 # O pacote editável mantém a mesma raiz de recursos do checkout. O código fica somente

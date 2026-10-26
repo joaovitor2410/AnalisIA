@@ -25,6 +25,9 @@ RECENT_RUNS = 30
 
 def ops_page() -> None:
     resources = load_resources()
+    if resources.settings.olheiro_demo_mode:
+        st.info("A página Operação está disponível apenas no modo pessoal.")
+        return
     st.title("Operação")
     st.caption(
         "Cada pergunta registra desfecho, latência, requisições, tokens e custo equivalente no "

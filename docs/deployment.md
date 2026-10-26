@@ -104,9 +104,11 @@ de leitura, ações fixadas por SHA, timeout e cancelamento de execuções antig
 4. Executa smoke e health HTTP, mostra logs em falha e descarta volumes temporários do runner.
    Isso não afeta o volume no computador do autor.
 
-O workflow passa a existir no GitHub depois do push deste commit. Conforme o fluxo do projeto,
-o autor roda os testes e libera esse push. O build e a execução real das imagens precisam
-ser confirmados num ambiente Docker; revisão de YAML não substitui isso.
+A infraestrutura base foi validada no GitHub em 2026-10-26, no commit `dc48922`, pela
+[execução 40365502597](https://github.com/joaovitor2410/AnalisIA/actions/runs/40365502597):
+qualidade, build, smoke de isolamento e acesso HTTP pelo host passaram. A nova matriz cobre
+modo pessoal e demo e será executada após o próximo push autorizado. Docker segue ausente
+neste Mac; a evidência de execução da infraestrutura vem do runner Linux.
 
 ## Backup e atualização
 
@@ -125,10 +127,10 @@ antigas no cache pode exigir revisão manual.
 
 ## Próxima etapa
 
-A Fase 8B escolherá hospedagem e acesso, isolará dashboard/cache/workspace por visitante,
-preparará exemplos curados e limites de uso e confirmará as condições dos dados antes da
-publicação. A instância atual compartilha estado entre sessões e a página Operação exibe
-registros da instância; a porta loopback mantém o escopo local.
+A Fase 8B prepara a demo antes de publicar, conforme escolha do autor: estado por sessão,
+exemplos curados, leitura e limites de uso. Veja [docs/demo.md](demo.md). O modo pessoal
+continua compartilhando estado entre sessões da instância. Hospedagem, acesso, condições de
+redistribuição dos dados e publicação ficam para uma etapa posterior.
 
 DuckDB permanece em `>=1.5.6,<2`. A versão 2.0 altera o formato padrão: testes em cópias e uma
 estratégia de retorno precedem a atualização dos bancos. A recomendação oficial prevê teste

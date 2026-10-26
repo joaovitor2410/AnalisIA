@@ -1,7 +1,7 @@
 """Modelos Pydantic em arquivo: JSON inteiro (cache, dashboard) ou JSONL só de acréscimo (logs).
 
 Escrita atômica ou por acréscimo, sempre com lock, para duas sessões do app não se atropelarem.
-Para um deploy com vários usuários, é este módulo que muda (ex.: banco de dados).
+MemoryStore mantém estado por sessão na demo; persistência entre instâncias exige outro backend.
 """
 
 import threading
@@ -10,6 +10,24 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic import BaseModel, ValidationError
+
+
+class MemoryStore[M: BaseModel]:
+    """Estado de uma sessão: cópias profundas impedem alterações fora da transação."""
+
+    def __init__(self, model: type[M]) -> None:
+        self._data = model()
+        self._lock = threading.Lock()
+
+    def read(self) -> M:
+        return self._data.model_copy(deep=True)
+
+    @contextmanager
+    def update(self) -> Iterator[M]:
+        with self._lock:
+            data = self.read()
+            yield data
+            self._data = data.model_copy(deep=True)
 
 
 class JsonFile[M: BaseModel]:

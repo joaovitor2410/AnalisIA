@@ -30,7 +30,8 @@ from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.providers.google import GoogleProvider
 from pydantic_ai.run import AgentRunResult
 from pydantic_ai.settings import ModelSettings
-from pydantic_ai.usage import RunUsage
+from pydantic_ai.tools import ToolDefinition
+from pydantic_ai.usage import RunUsage, UsageLimits
 
 from olheiro import tools
 from olheiro.charts import ChartError, ChartSpec, check_chart
@@ -46,6 +47,8 @@ class AgentDeps:
 
     con: duckdb.DuckDBPyConnection
     glossary: Glossary = field(default_factory=Glossary)
+    allow_saves: bool = True
+    usage_limits: UsageLimits | None = None
 
 
 class AnalysisAnswer(BaseModel):
@@ -147,7 +150,10 @@ agent: Agent[AgentDeps, AgentOutput] = Agent(
 @agent.instructions
 def data_context(ctx: RunContext[AgentDeps]) -> str:
     """Instrução dinâmica: glossário + catálogo lidos a cada passo (inclui tabelas recém-salvas)."""
-    return render_context(ctx.deps.glossary, ctx.deps.con)
+    context = render_context(ctx.deps.glossary, ctx.deps.con)
+    if not ctx.deps.allow_saves:
+        context += "\nModo demonstração: somente leitura. Não é possível salvar tabelas."
+    return context
 
 
 @agent.tool
@@ -171,7 +177,14 @@ def profile_column(ctx: RunContext[AgentDeps], table: str, column: str) -> dict[
     return tools.profile_column(ctx.deps.con, table, column)
 
 
-@agent.tool
+def prepare_save_result(
+    ctx: RunContext[AgentDeps], tool_def: ToolDefinition
+) -> ToolDefinition | None:
+    """Retira gravações do contrato entregue ao modelo em uma sessão de demonstração."""
+    return tool_def if ctx.deps.allow_saves else None
+
+
+@agent.tool(prepare=prepare_save_result)
 def save_result(ctx: RunContext[AgentDeps], name: str, query: str) -> dict[str, str]:
     """Salva o resultado de uma consulta como tabela em workspace. O usuário precisa aprovar.
 
@@ -179,6 +192,8 @@ def save_result(ctx: RunContext[AgentDeps], name: str, query: str) -> dict[str, 
         name: Nome da nova tabela, em snake_case (ex.: campeoes_por_temporada).
         query: Consulta SELECT cujo resultado será salvo.
     """
+    if not ctx.deps.allow_saves:
+        return {"error": "A demonstração permite apenas leitura; nenhuma tabela foi gravada."}
     if not ctx.tool_call_approved:
         # 1ª passagem: valida antes de incomodar o usuário; só pede aprovação se der para gravar.
         try:
@@ -213,7 +228,7 @@ def ask(
     question: str, deps: AgentDeps, model: Model | None = None
 ) -> AgentReport | PendingApproval:
     """Faz uma pergunta. Devolve a resposta com evidência, ou uma pausa para aprovação."""
-    result = agent.run_sync(question, deps=deps, model=model)
+    result = agent.run_sync(question, deps=deps, model=model, usage_limits=deps.usage_limits)
     return to_outcome(result, deps, result.usage)
 
 

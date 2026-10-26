@@ -21,12 +21,17 @@ def show_sidebar() -> None:
         "Analista de dados com IA: pergunte em português e receba a resposta com o SQL, "
         "a tabela e o gráfico que a sustentam."
     )
-    if resources.model is None:
+    demo = resources.settings.olheiro_demo_mode
+    if demo:
+        st.caption("Modo demonstração · seu dashboard pertence a esta sessão")
+    if demo and not resources.settings.olheiro_demo_model_enabled:
+        st.info("Escolha uma pergunta pronta para explorar os dados.")
+    elif resources.model is None:
         st.warning(f"Modelo indisponível: {resources.model_error}", icon=":material/warning:")
     else:
         st.caption(f"Modelo: {resources.settings.olheiro_model}")
-    limit = resources.settings.olheiro_session_question_limit
-    if limit is not None:
+    limit = resources.settings.session_question_limit
+    if limit is not None and (not demo or resources.settings.olheiro_demo_model_enabled):
         used = st.session_state.get("model_questions", 0)
         progress = min(used / limit, 1.0) if limit else 1.0
         st.progress(progress, text=f"Perguntas livres: {used} de {limit}")
@@ -42,11 +47,11 @@ except WorkspaceInUseError as error:
     if st.button("Tentar novamente", key="retry-workspace"):
         st.rerun()
     st.stop()
-st.navigation(
-    [
-        st.Page(ask_page, title="Perguntar", icon=":material/chat:", default=True),
-        st.Page(dashboard_page, title="Dashboard", icon=":material/dashboard:"),
-        st.Page(data_page, title="Dados", icon=":material/table_chart:"),
-        st.Page(ops_page, title="Operação", icon=":material/monitoring:"),
-    ]
-).run()
+pages = [
+    st.Page(ask_page, title="Perguntar", icon=":material/chat:", default=True),
+    st.Page(dashboard_page, title="Dashboard", icon=":material/dashboard:"),
+    st.Page(data_page, title="Dados", icon=":material/table_chart:"),
+]
+if not load_resources().settings.olheiro_demo_mode:
+    pages.append(st.Page(ops_page, title="Operação", icon=":material/monitoring:"))
+st.navigation(pages).run()

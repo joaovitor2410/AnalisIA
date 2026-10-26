@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     # Perguntas que vão ao modelo por sessão do app (respostas do cache não contam).
     # Vazio = sem limite (uso local); numa demo pública, protege a cota do nível gratuito.
     olheiro_session_question_limit: int | None = Field(default=None, ge=0)
+    # Demonstração do app: estado por visitante, leitura e exemplos curados.
+    olheiro_demo_mode: bool = False
+    # Chamadas ao modelo exigem opt-in, mesmo que o .env pessoal já contenha uma chave.
+    olheiro_demo_model_enabled: bool = False
+    olheiro_demo_total_question_limit: int = Field(default=10, ge=0)
+    demo_examples_path: Path = Path("demo/examples.toml")
     # Observabilidade (F6). Traces OpenTelemetry: off, file (traces_path) ou otlp (backend).
     olheiro_tracing: Literal["off", "file", "otlp"] = "file"
     olheiro_otlp_endpoint: str = "http://localhost:4318/v1/traces"
@@ -63,6 +69,7 @@ class Settings(BaseSettings):
         "dashboard_path",
         "traces_path",
         "runs_path",
+        "demo_examples_path",
     )
     @classmethod
     def _resolve_from_root(cls, path: Path) -> Path:
@@ -83,6 +90,13 @@ class Settings(BaseSettings):
         """Devolve a chave do provedor configurado (ou None se faltar/desconhecido)."""
         field_name = PROVIDER_KEY_FIELDS.get(self.provider)
         return getattr(self, field_name) if field_name else None
+
+    @property
+    def session_question_limit(self) -> int | None:
+        """A demo limita a sessão a cinco perguntas quando não há limite explícito."""
+        if self.olheiro_demo_mode and self.olheiro_session_question_limit is None:
+            return 5
+        return self.olheiro_session_question_limit
 
 
 def get_settings() -> Settings:

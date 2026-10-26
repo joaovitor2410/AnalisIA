@@ -15,6 +15,8 @@ API + frontend no site do portfólio, ou só local + vídeo). Por isso: núcleo 
 interface (agent, cache, dashboard, semantic, storage); Streamlit é só uma camada fina.
 Em 2026-10-26, o autor escolheu **preparar Docker e CI primeiro (F8A)**; publicação online
 fica para a F8B. Autorizou e recebeu o push da F7 (`4f667ce`) em `origin/main`.
+Depois autorizou o push da F8A/correção de lock e escolheu **preparar a demo antes de publicar**:
+F8B = demonstração local; hospedagem e publicação passam à F8C. F8A validada no runner Linux.
 - Funções: chat analítico com evidência e passos do agente; dashboard (fixar respostas, KPIs);
   explorador de dados; perguntas prontas via cache. Upload de CSV do visitante: fora por ora.
 - Ideia central: o LLM **cria** a análise uma vez; dashboard e cache **reexecutam** o SQL
@@ -104,6 +106,10 @@ fica para a F8B. Autorizou e recebeu o push da F7 (`4f667ce`) em `origin/main`.
 | F8A: DuckDB segue `>=1.5.6,<2` | Reavaliada a atualização prevista: 2.0 muda o formato padrão dos arquivos. Separar a migração com cópias e retorno do empacotamento evita alterar os bancos do autor sem validação própria. Não houve mudança da versão instalada, 1.5.6. |
 | F8A: limite de sessão 0 suportado no app completo | Antes a barra lateral dividia por zero. Agora mostra o limite esgotado e permite cache; configuração rejeita valores negativos. AppTest cobre ausência de limite, 0 e 5. |
 | Correção pós-F8A: conflito de workspace tratado | Uma instância antiga do Streamlit mantinha o lock e outra falhava ao iniciar. `connect_agent` fecha conexões parciais em qualquer falha e converte o conflito em `WorkspaceInUseError`, com PID e orientação. `olheiro-app` verifica o workspace antes de subir o servidor; app direto mostra mensagem e botão de tentar novamente; CLI e diagnóstico também explicam o conflito. Sem apagar/substituir o workspace ou mudar silenciosamente para outro banco. **151 testes**, incluindo lock entre dois processos reais, liberação do raw após falha, recuperação no AppTest e recusa de startup duplicado; lint/format/mypy sem erros. |
+| F8B: demo do Streamlit com estado por sessão | `OLHEIRO_DEMO_MODE=true`; `MemoryStore` (cópias profundas e atualização transacional) guarda cache e dashboard de cada visitante. Só base/glossário/exemplos e orçamento de instância são compartilhados. `connect_agent(..., None)` anexa workspace vazio em memória; o arquivo pessoal não é aberto. Modo pessoal preserva a persistência anterior. |
+| F8B: exemplos em TOML, curadoria SQL sem LLM | `demo/examples.toml`, seis exemplos validados e executados ao iniciar; `AnalysisAnswer`/`ChartSpec` reutilizados. Cada sessão recebe cópia do cache; cada resposta reexecuta o SQL. Textos evitam números fixos, ranking inclui empates e aproveitamento usa pontos/(3*jogos). |
+| F8B: chamadas ao Gemini exigem opt-in | `OLHEIRO_DEMO_MODEL_ENABLED=false` por padrão, mesmo com chave pessoal presente. Quando habilitado: cinco tentativas por sessão por padrão, dez por processo (`OLHEIRO_DEMO_TOTAL_QUESTION_LIMIT`, lock) e `UsageLimits(request_limit=6, tool_calls_limit=12)` por análise. Cache é livre. Orçamento de instância reinicia com o processo e não é controle financeiro do provedor. |
+| F8B: somente leitura e privacidade | `AgentDeps.allow_saves=false` retira `save_result` via `prepare`; guarda na função também recusa. Operação sai da navegação e recusa invocação direta. `RunLog(include_content=False)` omite pergunta e texto de erro. Traces detalhados ficam obrigatoriamente off na demo, pois exceções de bibliotecas podem conter argumentos além do payload. |
 | F3: defesa em profundidade, 3 camadas independentes | Cada uma bloqueia sozinha: (1) `sql_guard` (sqlglot), (2) motor DuckDB blindado, (3) aprovação humana para gravar. |
 | Camada 1, `sql_guard.check_query` | Uma única consulta (`exp.Query`); toda tabela é um nome (não função/arquivo) em `raw`/`workspace` ou um CTE. Bloqueia `read_csv(...)`, `FROM 'arquivo'`, DDL/DML, `COPY`, `ATTACH`, `SET`, catálogo explícito. Erros sem códigos de cor (campos de `ParseError.errors`). |
 | Camada 2, `db.connect_agent` | Conexão `:memory:` com `ATTACH olheiro.duckdb (READ_ONLY)` + `USE lake`, `ATTACH workspace.duckdb`, `enable_external_access=false`, autoload/autoinstall de extensões desligados, `memory_limit=1GB`, `lock_configuration=true` (por último). Testado: escrever em raw, ler/gravar arquivo, ATTACH, INSTALL e destravar config falham no motor. |
@@ -170,12 +176,15 @@ src/olheiro/tracing.py      OpenTelemetry: setup, exportador JSONL, leitura de u
 src/olheiro/telemetry.py    RunRecord, RunLog e tracked() (registro de execuções)
 src/olheiro/mcp_server.py   servidor MCP stdio: SQL, perfil, perguntas, contexto e prompt
 src/olheiro/launcher.py     entrada web olheiro-app, validação/carga inicial sem sobrescrever
+src/olheiro/demo.py         exemplos curados e orçamento concorrente da demonstração
+demo/examples.toml         seis exemplos sem LLM (SQL + ChartSpec + recusa)
 examples/mcp_client.py     cliente stdio de demonstração (SQL sem cota; --question para agente)
 docs/mcp.md                contrato MCP, limites e conexão ao Claude Desktop/Code
 Dockerfile / compose.yaml  imagem e execução local com volume e rede interna
 deploy/                    Dockerfile/config Squid e smoke do runtime sem Gemini
 .github/workflows/ci.yml   qualidade, build do pacote e verificação dos contêineres
 docs/deployment.md          operação, validação e limites da entrega F8A
+docs/demo.md                modo demo, isolamento de sessões, limites e privacidade
 data/raw/SOURCE.md          fonte Kaggle, condições informadas e hashes dos CSVs
 evals/cases.yaml            39 casos com gabarito em 7 categorias
 evals/results/              resultados por modelo + README comparativo
@@ -241,7 +250,7 @@ data/exports/               exportações do agente (ignorado no Git)
   artilharia, **1 requisição em 5,1 s**, `gemini-3.8-flash`, registro ligado a 3 spans.
   Rodar: `uv run olheiro-mcp`; testar sem cota: `uv run python examples/mcp_client.py`.
 - [~] **Fase 8: Docker, CI, deploy, README.** Dividida conforme escolha do autor:
-  - **F8A preparada:** Dockerfile em duas etapas, Compose local com saída restrita via Squid,
+  - **F8A concluída e validada:** Dockerfile em duas etapas, Compose local com saída restrita via Squid,
     workflow CI de qualidade e contêiner, README refeito, origem dos dados e guia de operação.
     `olheiro-app` inicializa a base com segurança; limite zero da sessão corrigido.
     **147 testes offline**, lint/format/mypy; build wheel/sdist e conteúdo dos pacotes verificados
@@ -249,19 +258,25 @@ data/exports/               exportações do agente (ignorado no Git)
     AppTest **sem pytest e sem chave**. Compose validado contra schema oficial, CI validada
     com actionlint **1.7.12** e sintaxe shell conferida. Nenhuma chamada
     extra ao Gemini nesta etapa de infraestrutura.
-    **Falta validar build/runtime Docker:** Docker não está instalado neste Mac. A CI inclui
-    essa validação, mas só rodará remotamente após o próximo push aprovado. Não foi executada
-    nem apresentada como aprovada. Comandos: `docker compose up --build --detach --wait` e
-    `docker compose exec -T app python deploy/smoke.py`.
-    Push autorizado em 2026-10-26: commits `3eed474` e `809f2bd` enviados. Primeira CI
-    (`40363787090`) encontrou um teste de limite que dependia da chave local; corrigido
-    com FunctionModel explícito, sem chamadas ao provedor. Nova validação em acompanhamento.
-    CI seguinte (`40364563959`): qualidade e build passaram; contêiner iniciou e passou no
-    smoke (base, AppTest, usuário, filesystem e rede), mas a porta do app na rede interna não
-    ficou acessível ao host. Corrigido com entrada NGINX separada (`web`), preservando a rede
-    interna do app; nova execução em acompanhamento.
-  - **F8B pendente:** hospedagem, isolamento por visitante, exemplos curados, condições de
-    redistribuição dos dados, migração DuckDB 2.x e publicação online. Não autorizada nesta etapa.
+    Push autorizado em 2026-10-26: commits `3eed474` e `809f2bd` enviados, seguidos pelos reparos
+    necessários da CI `5b1406b` (teste sem chave) e `dc48922` (entrada NGINX sem retirar o app
+    da rede interna). **CI verde no runner Ubuntu**, execução `40365502597`:
+    https://github.com/joaovitor2410/AnalisIA/actions/runs/40365502597 . Qualidade, build do
+    pacote, build/inicialização Docker, smoke de base/blindagem/usuário/filesystem/AppTest/rede
+    e acesso HTTP pelo host passaram. Docker segue ausente neste Mac; a validação real veio
+    do runner Linux. NGINX unprivileged **1.30.6-alpine** no serviço `web`.
+  - **F8B: demo preparada antes de publicar.** Seis exemplos curados, cache/dashboard/histórico
+    por sessão, workspace em memória, gravações desabilitadas no agente, Operação privada,
+    logs sem conteúdo e traces detalhados desligados. Modelo só por opt-in, com três limites.
+    **167 testes offline**, inclusive cópia limpa sem `.env`; lint/format/mypy e build aprovados.
+    Verificação real única via AppTest da demo: recusa do artilheiro de 2024, **1 requisição
+    em 4,67 s**, `gemini-3.8-flash`; pergunta omitida do registro e nenhum arquivo de trace.
+    Prévia local na porta 8503, funcionando ao lado do app pessoal na 8501 sem disputa de workspace.
+    CI estendida para matriz pessoal/demo e smoke de isolamento de visitantes; essa ampliação
+    aguarda o próximo push aprovado, sem alegação de validação remota da versão nova.
+    Rodar: `OLHEIRO_DEMO_MODE=true uv run olheiro-app --server.port=8503`.
+  - **F8C pendente:** hospedagem, acesso, condições de redistribuição dos dados e publicação.
+    Migração DuckDB 2.x continua separada, com cópias e estratégia de retorno.
 
 ## Pendências / em aberto
 - **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB
@@ -275,9 +290,10 @@ data/exports/               exportações do agente (ignorado no Git)
   por elicitation ficam para uma evolução futura; não há aprovação por argumento do modelo.
   `OLHEIRO_SESSION_QUESTION_LIMIT` limita só o app Streamlit, não o MCP local. Configuração de
   clientes documentada, sem alterar arquivos do Claude automaticamente.
-- **Para a publicação (F8):** decidir a hospedagem; cache curado de exemplos versionado (hoje
-  `data/answer_cache.json` é local e ignorado no Git); dashboard por visitante (hoje é um
-  arquivo único, compartilhado); `OLHEIRO_SESSION_QUESTION_LIMIT` ligado.
+- **Para a publicação (F8C):** decidir hospedagem/acesso e condições dos dados; validar a matriz
+  Docker com a demo após push; configurar limites no provedor se habilitar novas perguntas.
+  A F8B já prepara exemplos versionados e estado por sessão. O orçamento é por processo:
+  reinícios/replicação precisam ser considerados na hospedagem.
 - **Limitações conhecidas:** perguntas independentes (sem memória de conversa: "e em 2020?" não
   funciona); resposta do cache pode ficar com texto desatualizado se os dados mudarem (os
   números não, pois o SQL é reexecutado). Apagar `data/answer_cache.json` limpa o cache.

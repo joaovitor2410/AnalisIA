@@ -41,8 +41,8 @@ def check_python() -> CheckResult:
 
 def check_env_file() -> CheckResult:
     exists = (PROJECT_ROOT / ".env").exists()
-    detail = "encontrado" if exists else "faltando: rode `cp .env.example .env`"
-    return CheckResult(exists, "Arquivo .env", detail)
+    detail = "encontrado" if exists else "opcional: configuração também pode vir do ambiente"
+    return CheckResult(True, "Arquivo .env", detail)
 
 
 def check_model_key(settings: Settings) -> CheckResult:
@@ -96,7 +96,8 @@ def check_agent_connection(settings: Settings) -> CheckResult:
     """A conexão do agente abre e o motor recusa ler arquivos do disco."""
     label = "Conexão blindada do agente"
     try:
-        with connect_agent(settings.duckdb_path, settings.workspace_path) as con:
+        workspace = None if settings.olheiro_demo_mode else settings.workspace_path
+        with connect_agent(settings.duckdb_path, workspace) as con:
             con.execute("SELECT * FROM read_csv('/etc/hosts')")
     except duckdb.PermissionException:
         return CheckResult(True, label, "raw somente leitura, sem acesso a disco/rede")
@@ -120,7 +121,11 @@ def run_checks() -> list[CheckResult]:
     results = [
         check_python(),
         check_env_file(),
-        check_model_key(settings),
+        (
+            CheckResult(True, "Consultas ao modelo", "desabilitadas na demo; exemplos sem chave")
+            if settings.olheiro_demo_mode and not settings.olheiro_demo_model_enabled
+            else check_model_key(settings)
+        ),
         check_raw_files(settings),
         check_database(settings),
     ]

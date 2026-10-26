@@ -49,10 +49,13 @@ class RunRecord(BaseModel):
 
 
 class RunLog:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, include_content: bool = True) -> None:
         self.file = JsonLines(path, RunRecord)
+        self.include_content = include_content
 
     def append(self, record: RunRecord) -> None:
+        if not self.include_content:
+            record = record.model_copy(update={"question": "(conteúdo omitido)", "error": None})
         self.file.append(record)
 
     def read(self) -> list[RunRecord]:
@@ -90,7 +93,7 @@ def tracked(log: RunLog, question: str, source: Source, phase: Phase = "ask") ->
     run = RunContext(datetime.now(), source, phase, question)
     started = perf_counter()
     attributes: dict[str, str] = {"olheiro.source": source, "olheiro.phase": phase}
-    if content_enabled():
+    if content_enabled() and log.include_content:
         attributes["olheiro.question"] = question
     with tracer().start_as_current_span("olheiro.pergunta", attributes=attributes) as span:
         try:

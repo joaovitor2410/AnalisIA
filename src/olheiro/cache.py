@@ -18,7 +18,7 @@ from pydantic_ai.usage import RunUsage
 
 from olheiro.agent import AgentDeps, AgentReport, AnalysisAnswer, PendingApproval, ask, build_report
 from olheiro.sql_guard import UnsafeQueryError, check_query
-from olheiro.storage import JsonFile
+from olheiro.storage import JsonFile, MemoryStore
 
 
 class CachedAnswer(BaseModel):
@@ -39,8 +39,8 @@ def normalize_question(question: str) -> str:
 
 
 class AnswerCache:
-    def __init__(self, path: Path) -> None:
-        self.file = JsonFile(path, CacheFile)
+    def __init__(self, path: Path | None) -> None:
+        self.file = JsonFile(path, CacheFile) if path is not None else MemoryStore(CacheFile)
 
     def read(self) -> CacheFile:
         return self.file.read()

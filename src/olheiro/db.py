@@ -88,20 +88,23 @@ def connect(db_path: Path, read_only: bool = False) -> duckdb.DuckDBPyConnection
     return duckdb.connect(str(db_path), read_only=read_only)
 
 
-def connect_agent(db_path: Path, workspace_path: Path) -> duckdb.DuckDBPyConnection:
+def connect_agent(db_path: Path, workspace_path: Path | None) -> duckdb.DuckDBPyConnection:
     """Conexão que o agente usa: raw somente leitura, workspace gravável, motor blindado.
 
     O banco principal é anexado com READ_ONLY: escrever em raw falha no próprio DuckDB.
+    workspace_path=None anexa um banco vazio em memória, usado pela demo sem abrir o pessoal.
     """
-    workspace_path.parent.mkdir(parents=True, exist_ok=True)
+    if workspace_path is not None:
+        workspace_path.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(":memory:")
     try:
         con.execute(f"ATTACH '{db_path}' AS {LAKE_CATALOG} (READ_ONLY)")
         con.execute(f"USE {LAKE_CATALOG}")  # "raw.teams" resolve sem prefixar o catálogo
         try:
-            con.execute(f"ATTACH '{workspace_path}' AS {WORKSPACE_CATALOG}")
+            workspace = str(workspace_path) if workspace_path is not None else ":memory:"
+            con.execute(f"ATTACH '{workspace}' AS {WORKSPACE_CATALOG}")
         except duckdb.IOException as error:
-            if "Could not set lock on file" in str(error):
+            if workspace_path is not None and "Could not set lock on file" in str(error):
                 raise WorkspaceInUseError(workspace_path, str(error)) from error
             raise
         for statement in AGENT_HARDENING:

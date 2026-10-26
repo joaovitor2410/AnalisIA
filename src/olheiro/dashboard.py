@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from olheiro.agent import AgentReport
 from olheiro.charts import ChartError, ChartSpec, build_figure, check_chart
 from olheiro.sql_guard import UnsafeQueryError, check_query
-from olheiro.storage import JsonFile
+from olheiro.storage import JsonFile, MemoryStore
 from olheiro.tools import QueryResult, query_rows
 
 
@@ -44,8 +44,8 @@ class RenderedItem:
 
 
 class DashboardStore:
-    def __init__(self, path: Path) -> None:
-        self.file = JsonFile(path, Dashboard)
+    def __init__(self, path: Path | None) -> None:
+        self.file = JsonFile(path, Dashboard) if path is not None else MemoryStore(Dashboard)
 
     def read(self) -> Dashboard:
         return self.file.read()

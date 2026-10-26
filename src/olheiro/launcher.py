@@ -57,7 +57,10 @@ def main(argv: list[str] | None = None) -> None:
                 print("Base de demonstração inicializada a partir dos CSVs.", flush=True)
             # Detecta a disputa antes de subir outra instância do servidor. Fecha a conexão
             # imediatamente; o app repete a verificação se houver corrida entre processos.
-            with connect_agent(settings.duckdb_path, settings.workspace_path):
+            with connect_agent(
+                settings.duckdb_path,
+                None if settings.olheiro_demo_mode else settings.workspace_path,
+            ):
                 pass
         except (OSError, ValueError, duckdb.Error, WorkspaceInUseError) as error:
             sys.exit(f"Não foi possível iniciar o Olheiro: {error}")

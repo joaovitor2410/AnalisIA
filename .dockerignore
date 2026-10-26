@@ -10,6 +10,8 @@
 !src/**
 !semantic/
 !semantic/**
+!demo/
+!demo/**
 !data/
 !data/raw/
 !data/raw/*.csv

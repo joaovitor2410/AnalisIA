@@ -50,6 +50,8 @@ def ask_page() -> None:
         "Brasileirão Série A 2003–2024. Cada resposta traz o SQL e a tabela que a sustentam."
     )
     show_examples(resources)
+    if resources.settings.olheiro_demo_mode:
+        st.caption("Demonstração: itens fixados e histórico ficam disponíveis só nesta sessão.")
 
     for index, turn in enumerate(st.session_state.history):
         show_turn(index, turn, resources)
@@ -109,14 +111,27 @@ def answer(
     if problem is not None:
         st.session_state.history.append(ChatTurn(question, error=problem))
         return None
+    if resources.budget is not None and not resources.budget.take():
+        st.session_state.history.append(
+            ChatTurn(
+                question,
+                error="As novas perguntas desta demonstração foram esgotadas. "
+                "As perguntas prontas continuam disponíveis.",
+            )
+        )
+        return None
     st.session_state.model_questions += 1
     return ask_with_cache(question, deps, resources.cache, resources.model)
 
 
 def model_unavailable(resources: AppResources) -> str | None:
+    if resources.settings.olheiro_demo_mode and not resources.settings.olheiro_demo_model_enabled:
+        return (
+            "Novas perguntas estão desabilitadas nesta demonstração. Escolha uma pergunta pronta."
+        )
     if resources.model is None:
         return f"Modelo indisponível: {resources.model_error}"
-    limit = resources.settings.olheiro_session_question_limit
+    limit = resources.settings.session_question_limit
     if limit is not None and st.session_state.model_questions >= limit:
         return (
             f"Você já usou as {limit} perguntas livres desta sessão. "

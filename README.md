@@ -47,6 +47,23 @@ interface, o explorador, o dashboard e respostas já guardadas continuam dispon�
 Também funciona `uv run streamlit run src/olheiro/app.py`.
 Para conectar ao Claude, veja [docs/mcp.md](docs/mcp.md).
 
+## Demo para visitantes
+
+```bash
+OLHEIRO_DEMO_MODE=true uv run olheiro-app --server.port=8503
+```
+
+Abra http://localhost:8503. Seis exemplos curados reexecutam SQL sem chamar o Gemini, incluindo
+o empate entre os maiores campeões e a recusa de perguntas sobre artilharia. Dashboard,
+histórico e novas respostas em cache pertencem à sessão; o workspace pessoal não é aberto.
+A página Operação fica fora da demo e os registros omitem o conteúdo das perguntas e erros.
+
+Novas perguntas ao modelo exigem `OLHEIRO_DEMO_MODEL_ENABLED=true` e chave de API. Há limite
+por sessão (padrão 5), por processo (padrão 10 tentativas) e por análise (6 requisições
+contabilizadas pelo agente). Os exemplos continuam disponíveis após os limites.
+Veja [docs/demo.md](docs/demo.md). A demo está preparada para revisão local; a publicação
+continua pendente da escolha de hospedagem e das condições de redistribuição dos dados.
+
 Exemplos: “Quais times têm mais títulos desde 2003?”, “Como evoluíram os pontos dos campeões?”
 e “Qual o aproveitamento dos campeões considerando os jogos de cada temporada?”. Os dados
 são classificações finais; não há estatísticas individuais nem resultados de cada partida.
@@ -76,8 +93,9 @@ da aplicação é interna; um proxy permite apenas túneis HTTPS para a API Gemi
 é publicada em `127.0.0.1`. A receita atende ao uso local de uma instância; preparação para
 visitantes e publicação online ficam para a próxima etapa.
 
-Detalhes e validação em [docs/deployment.md](docs/deployment.md). O build e o runtime Docker
-precisam ser verificados num ambiente com Docker; os testes Python não substituem essa etapa.
+Detalhes em [docs/deployment.md](docs/deployment.md). A infraestrutura base passou na
+[CI com Docker](https://github.com/joaovitor2410/AnalisIA/actions/runs/40365502597).
+A CI desta etapa acrescenta cenários pessoal e demo; a versão nova será verificada no próximo push.
 
 ## Arquitetura
 
@@ -140,7 +158,8 @@ substituem a rodada real.
 
 Perguntas são independentes, sem memória de conversa. O texto do cache pode ficar antigo
 se os dados mudarem, embora a tabela seja reexecutada. Dashboard, cache e logs pertencem à
-instância; publicação multiusuário exige isolamento adicional. Logs ainda não têm rotação.
+instância no modo pessoal. A demo usa estado por sessão, sem persistência entre sessões.
+Logs ainda não têm rotação.
 DuckDB permanece na linha 1.5; a migração para 2.x requer teste separado dos bancos.
 
 ## Dados e licença
