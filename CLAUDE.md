@@ -253,6 +253,9 @@ data/exports/               exportações do agente (ignorado no Git)
     essa validação, mas só rodará remotamente após o próximo push aprovado. Não foi executada
     nem apresentada como aprovada. Comandos: `docker compose up --build --detach --wait` e
     `docker compose exec -T app python deploy/smoke.py`.
+    Push autorizado em 2026-10-26: commits `3eed474` e `809f2bd` enviados. Primeira CI
+    (`40363787090`) encontrou um teste de limite que dependia da chave local; corrigido
+    com FunctionModel explícito, sem chamadas ao provedor. Nova validação em acompanhamento.
   - **F8B pendente:** hospedagem, isolamento por visitante, exemplos curados, condições de
     redistribuição dos dados, migração DuckDB 2.x e publicação online. Não autorizada nesta etapa.
 

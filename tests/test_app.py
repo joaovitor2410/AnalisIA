@@ -137,6 +137,12 @@ def test_session_limit_blocks_new_model_questions(
     app_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("OLHEIRO_SESSION_QUESTION_LIMIT", "0")
+    # O teste mede o limite, não a presença da chave local; também roda na CI sem .env.
+    monkeypatch.setattr(
+        resources,
+        "build_model",
+        lambda settings: FunctionModel(lambda messages, info: pytest.fail("Chamou o modelo")),
+    )
     app = page_app(run_ask_page).run()
 
     app.chat_input[0].set_value("Quem foi o campeão de 2019?").run()
