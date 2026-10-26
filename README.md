@@ -18,7 +18,12 @@ uv run olheiro-check   # confere se está tudo ok
 ```bash
 uv run streamlit run src/olheiro/app.py                 # app: Perguntar, Dashboard, Dados
 uv run olheiro-ask --verbose "Qual região tem mais títulos?"   # pelo terminal
+uv run olheiro-mcp                                    # servidor MCP local (stdio)
+uv run python examples/mcp_client.py                  # teste MCP sem Gemini
 ```
+
+O servidor MCP oferece SQL, perfil de colunas, contexto dos dados e perguntas ao agente com
+cache, em modo de leitura. Veja [como usar e conectar ao Claude](docs/mcp.md).
 
 Cada pergunta gera um trace OpenTelemetry e um registro de execução, visíveis na página
 **Operação** do app (latência, custo, erros e o passo a passo do agente). Para enviar os traces a

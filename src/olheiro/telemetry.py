@@ -24,7 +24,7 @@ from olheiro.pricing import cost_usd
 from olheiro.storage import JsonLines
 from olheiro.tracing import content_enabled, tracer
 
-type Source = Literal["app", "cli", "eval"]
+type Source = Literal["app", "cli", "eval", "mcp"]
 type Phase = Literal["ask", "resume"]
 type Outcome = Literal["answer", "refusal", "approval", "error"]
 

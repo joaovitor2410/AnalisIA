@@ -89,6 +89,12 @@ interface (agent, cache, dashboard, semantic, storage); Streamlit é só uma cam
 | Página Operação | KPIs (perguntas, % cache, % erro, latência p50/p95, requisições/pergunta, custo equivalente), latência no tempo, desfechos, execuções recentes e **cascata do trace** de cada pergunta. Lê só arquivos; não chama o modelo. |
 | `pricing.py` compartilhado (evals e Operação) | Custo equivalente no nível pago; inclui `gemini-3.6-flash` (nome servido do 3.5 Flash). |
 | Modelo construído com chave explícita (`GoogleProvider(api_key=...)`) | Sem a chave, o provider leria `os.environ`; mantém a regra "só Settings". |
+| F7: SDK oficial `mcp` 2.x (`MCPServer`), transporte stdio local | Cliente inicia e encerra o processo; sem porta HTTP. `olheiro-mcp` e `python -m olheiro.mcp_server`. Banner do Pydantic AI desligado para preservar stdout do protocolo. Negociação atual e legada testadas em subprocesso. |
+| MCP com dois caminhos de análise | `run_sql` e `profile_column`: o modelo do cliente conduz, sem Gemini no servidor. `ask_question`: delega ao núcleo `ask`, com cache opcional e `AnalysisAnswer` + evidência + consumo. Modelo construído só na falta do cache: SQL, recurso e cache funcionam sem chave. |
+| MCP somente leitura nesta fase | Não expõe `save_result` nem retomada/aprovação por booleano. `PendingApproval` do agente interno termina com erro de ferramenta explicativo, sem gravar tabela/cache; usuário pode salvar via CLI/app com aprovação humana. Workspace continua anexado pelo núcleo existente. |
+| MCP: lifespan + um cursor por chamada | Fábrica não abre banco nem exige chave; lifespan abre/fecha conexão blindada, glossário, cache e logs. Handlers síncronos rodam nos workers do SDK: `ask.run_sync` fica fora do loop assíncrono. Cada chamada cria/fecha `session_cursor`, inclusive em erro; concorrência testada. |
+| MCP: recurso `olheiro://context`, prompt `analyze_data` e saída estruturada | Contexto relê o catálogo a cada acesso. SDK 2.3 não injeta `Context` em recurso estático: estado fica numa closure da fábrica, preenchida/limpa pelo lifespan, sem global. Tabelas JSON preservam ordem e colunas repetidas; datas/decimais viram strings, corte indicado por `truncated`. Gráfico enviado como `ChartSpec`, sem arquivo HTML. |
+| MCP: erros de execução usam `ToolError` | SQL proibido, coluna inválida e falha do modelo chegam como `isError=true`; recusa por dados ausentes continua resultado normal (`answerable=false`). `tracked(..., source="mcp")` integra perguntas à Operação (origem MCP selecionada por padrão); SQL direto/perfis/recursos/prompts não contam como perguntas ao agente. |
 | F3: defesa em profundidade, 3 camadas independentes | Cada uma bloqueia sozinha: (1) `sql_guard` (sqlglot), (2) motor DuckDB blindado, (3) aprovação humana para gravar. |
 | Camada 1, `sql_guard.check_query` | Uma única consulta (`exp.Query`); toda tabela é um nome (não função/arquivo) em `raw`/`workspace` ou um CTE. Bloqueia `read_csv(...)`, `FROM 'arquivo'`, DDL/DML, `COPY`, `ATTACH`, `SET`, catálogo explícito. Erros sem códigos de cor (campos de `ParseError.errors`). |
 | Camada 2, `db.connect_agent` | Conexão `:memory:` com `ATTACH olheiro.duckdb (READ_ONLY)` + `USE lake`, `ATTACH workspace.duckdb`, `enable_external_access=false`, autoload/autoinstall de extensões desligados, `memory_limit=1GB`, `lock_configuration=true` (por último). Testado: escrever em raw, ler/gravar arquivo, ATTACH, INSTALL e destravar config falham no motor. |
@@ -101,6 +107,10 @@ ruff 0.17.1, uv 0.13.1, google-genai 2.31.0 (F1). Em 2026-10-21: pydantic-ai-sli
 plotly 7.1.0 (F2). Em 2026-10-22: sqlglot 30.24.0 (F3); duckdb 2.0.0 saiu, mantido 1.5.6 (atualizar na F8);
 streamlit 1.66.1 e pandas 3.1.0 (F4); pydantic-evals 2.59.0 (extra `evals`) e mypy 2.4.0 (F5);
 opentelemetry-sdk e exporter-otlp-proto-http 1.45.1 (F6, mesma versão da API trazida pelo Pydantic AI).
+Em 2026-10-26: `mcp` e `mcp-types` **2.3.0** (F7; requisito `mcp>=2.3,<3`, versão exata no
+`uv.lock`). Documentação oficial atual usa `MCPServer`, não `FastMCP` da linha 1.x:
+https://py.sdk.modelcontextprotocol.io/ (ferramentas, recursos, erros, lifespan, testes e hosts).
+Referências e instruções de conexão em `docs/mcp.md`.
 Preços pagos (2026-10-22, por 1M tokens): 3.8 Flash US$ 0,75 entrada / 3,75 saída (dobra em 2027);
 3.5 Flash-Lite US$ 0,30 / 2,50. Thinking é cobrado como saída. Na 2.59, `result.usage` é propriedade (não método); o banner some com
 `pydantic_ai.BANNER_ENABLED = False`.
@@ -147,6 +157,9 @@ src/olheiro/evaluation.py   evals: tarefa, avaliadores, resumo (comando olheiro-
 src/olheiro/pricing.py      preço por modelo e custo equivalente
 src/olheiro/tracing.py      OpenTelemetry: setup, exportador JSONL, leitura de um trace
 src/olheiro/telemetry.py    RunRecord, RunLog e tracked() (registro de execuções)
+src/olheiro/mcp_server.py   servidor MCP stdio: SQL, perfil, perguntas, contexto e prompt
+examples/mcp_client.py     cliente stdio de demonstração (SQL sem cota; --question para agente)
+docs/mcp.md                contrato MCP, limites e conexão ao Claude Desktop/Code
 evals/cases.yaml            39 casos com gabarito em 7 categorias
 evals/results/              resultados por modelo + README comparativo
 learning/manual_loop.py     F1: loop do agente à mão com google-genai (material de estudo)
@@ -200,7 +213,16 @@ data/exports/               exportações do agente (ignorado no Git)
   registro de execuções, página Operação com KPIs e cascata do trace. 114 testes. Teste real
   único (1 requisição): recusa do artilheiro em **4,6 s e 1 requisição**, contra ~55 s e 3
   requisições na F2 (o glossário da F3 eliminou a exploração; agora medido).
-- [ ] Fase 7: servidor MCP
+- [x] **Fase 7: servidor MCP.** SDK oficial 2.3.0, stdio local, `run_sql`, `profile_column`,
+  `ask_question` com evidência estruturada/cache, recurso de contexto e prompt de análise.
+  Só leitura: pedidos de gravação não são retomados e viram erro explicativo. Origem MCP
+  na Operação, cliente de demonstração e guia de conexão ao Claude. **138 testes** (23 de MCP
+  + caso MCP no AppTest da Operação; antes: 114), ruff lint/format e mypy sem erros.
+  Subprocessos com protocolo atual/legado e diretório inicial diferente, concorrência, erros,
+  cache, tipos JSON e fechamento de conexões verificados offline. Demonstração SQL real:
+  **22 temporadas**, sem Gemini. Teste real único via cliente MCP (sem cache): recusa de
+  artilharia, **1 requisição em 5,1 s**, `gemini-3.8-flash`, registro ligado a 3 spans.
+  Rodar: `uv run olheiro-mcp`; testar sem cota: `uv run python examples/mcp_client.py`.
 - [ ] Fase 8: Docker, CI, deploy, README
 
 ## Pendências / em aberto
@@ -211,6 +233,10 @@ data/exports/               exportações do agente (ignorado no Git)
   Um LLM-juiz poderia cobrir isso depois, com custo.
 - **Observabilidade local:** `data/traces.jsonl` e `data/runs.jsonl` crescem sem rotação (ok
   para uso local; num deploy, usar `otlp` e um backend com retenção).
+- **MCP local (F7):** só stdio e leitura. HTTP remoto/autenticação e eventual aprovação humana
+  por elicitation ficam para uma evolução futura; não há aprovação por argumento do modelo.
+  `OLHEIRO_SESSION_QUESTION_LIMIT` limita só o app Streamlit, não o MCP local. Configuração de
+  clientes documentada, sem alterar arquivos do Claude automaticamente.
 - **Para a publicação (F8):** decidir a hospedagem; cache curado de exemplos versionado (hoje
   `data/answer_cache.json` é local e ignorado no Git); dashboard por visitante (hoje é um
   arquivo único, compartilhado); `OLHEIRO_SESSION_QUESTION_LIMIT` ligado.

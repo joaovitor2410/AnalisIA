@@ -19,7 +19,7 @@ from olheiro.agent import AgentDeps, ask
 from olheiro.db import connect, connect_agent
 from olheiro.pricing import cost_usd
 from olheiro.storage import JsonLines
-from olheiro.telemetry import RunLog, RunRecord, tracked
+from olheiro.telemetry import RunLog, RunRecord, Source, tracked
 from olheiro.tracing import JsonLinesSpanExporter, configure_tracing, read_trace, tracer
 
 models.ALLOW_MODEL_REQUESTS = False
@@ -140,15 +140,19 @@ def run_ops_page() -> None:
     ops_page()
 
 
+@pytest.mark.parametrize("source", ["app", "mcp"])
 def test_ops_page_shows_kpis_and_the_trace_waterfall(
-    con: duckdb.DuckDBPyConnection, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    con: duckdb.DuckDBPyConnection,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source: Source,
 ) -> None:
     import streamlit as st
 
     traces = tmp_path / "traces.jsonl"
     configure_tracing(SimpleSpanProcessor(JsonLinesSpanExporter(traces)), include_content=True)
     runs = RunLog(tmp_path / "runs.jsonl")
-    with tracked(runs, QUESTION, "app") as run:
+    with tracked(runs, QUESTION, source) as run:
         run.finish(ask(QUESTION, AgentDeps(con), tool_then_answer()))
     monkeypatch.setenv("TRACES_PATH", str(traces))
     monkeypatch.setenv("DUCKDB_PATH", str(tmp_path / "test.duckdb"))

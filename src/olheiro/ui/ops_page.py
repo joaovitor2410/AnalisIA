@@ -13,7 +13,7 @@ from olheiro.telemetry import RunRecord
 from olheiro.tracing import SpanView, read_trace
 from olheiro.ui.resources import load_resources
 
-SOURCES = {"app": "App", "cli": "Terminal", "eval": "Avaliação"}
+SOURCES = {"app": "App", "cli": "Terminal", "mcp": "MCP", "eval": "Avaliação"}
 OUTCOMES = {
     "answer": "respondeu",
     "refusal": "recusou",
@@ -38,7 +38,7 @@ def ops_page() -> None:
     sources = st.pills(
         "Origem",
         list(SOURCES),
-        default=["app", "cli"],
+        default=["app", "cli", "mcp"],
         selection_mode="multi",
         format_func=SOURCES.__getitem__,
         key="ops-sources",
