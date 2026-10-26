@@ -256,6 +256,10 @@ data/exports/               exportações do agente (ignorado no Git)
     Push autorizado em 2026-10-26: commits `3eed474` e `809f2bd` enviados. Primeira CI
     (`40363787090`) encontrou um teste de limite que dependia da chave local; corrigido
     com FunctionModel explícito, sem chamadas ao provedor. Nova validação em acompanhamento.
+    CI seguinte (`40364563959`): qualidade e build passaram; contêiner iniciou e passou no
+    smoke (base, AppTest, usuário, filesystem e rede), mas a porta do app na rede interna não
+    ficou acessível ao host. Corrigido com entrada NGINX separada (`web`), preservando a rede
+    interna do app; nova execução em acompanhamento.
   - **F8B pendente:** hospedagem, isolamento por visitante, exemplos curados, condições de
     redistribuição dos dados, migração DuckDB 2.x e publicação online. Não autorizada nesta etapa.
 

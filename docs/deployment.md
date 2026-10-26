@@ -78,6 +78,12 @@ interna e externa. `HTTPS_PROXY` e `HTTP_PROXY` encaminham o tráfego pelo Squid
 ou portas são negados. O proxy não é publicado e não intercepta TLS; o certificado segue
 sendo validado pelo SDK.
 
+O serviço `web` (NGINX sem root, versão 1.30.6) publica HTTP e WebSocket no host e encaminha
+para `app:8501`. Ele participa das redes `frontend` e `isolated`; o app continua exclusivamente
+na rede interna. Essa entrada separada evita depender da publicação de portas de um serviço
+em rede interna, que falhou na validação do runner Linux. O health do proxy verifica todo
+o caminho HTTP até o Streamlit.
+
 O SDK Gemini instalado usa `trust_env=True`. A receita atende ao provedor Google implementado
 no Olheiro. Outros provedores ou OTLP remoto exigem política explícita e novo teste.
 O Compose usa tracing em arquivo e `OLHEIRO_TRACE_CONTENT=false`. O registro de execuções
