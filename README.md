@@ -5,7 +5,8 @@ SQL + tabela + visualização**. O Brasileirão Série A 2003–2024 demonstra o
 incluindo recusas quando os dados não permitem responder.
 
 Projeto de portfólio de João Victor, construído em fases para estudar agentes, Dados e BI.
-O núcleo pode ser usado pelo navegador, terminal ou protocolo MCP.
+O núcleo pode ser usado pelo navegador, terminal ou protocolo MCP. **Importe suas bases CSV
+e Parquet**, selecione a base ativa e analise outros domínios com o mesmo agente.
 
 ## Capacidades
 
@@ -15,6 +16,8 @@ O núcleo pode ser usado pelo navegador, terminal ou protocolo MCP.
 - **Operação:** acompanha latência, requisições, tokens, custo equivalente e traces.
 - **Cache:** reexecuta a evidência das perguntas repetidas com zero requisições ao LLM.
 - **MCP:** expõe SQL, perfis, contexto e perguntas ao agente em modo de leitura.
+- **Bases:** importação por upload ou terminal; catálogo automático, glossário opcional e
+  workspace, cache e dashboard separados por base.
 
 O modelo gera a análise; os números exibidos vêm do SQL executado no DuckDB. A validação
 não garante toda afirmação qualitativa do modelo: a evidência fica disponível para inspeção.
@@ -46,6 +49,29 @@ interface, o explorador, o dashboard e respostas já guardadas continuam dispon�
 
 Também funciona `uv run streamlit run src/olheiro/app.py`.
 Para conectar ao Claude, veja [docs/mcp.md](docs/mcp.md).
+
+## Usar seus CSVs e Parquets
+
+No modo pessoal, abra **Dados → Importar outra base**, envie arquivos e informe um nome e
+identificador. A base é selecionada após a importação; a barra lateral permite trocar.
+O limite padrão é 50 MB por importação. Não é preciso escrever um glossário para começar.
+
+Exemplo com dados sintéticos de uma loja:
+
+```bash
+uv run olheiro-dataset import examples/datasets/retail \
+  --name loja --title "Loja (dados sintéticos)" \
+  --glossary examples/datasets/retail/glossary.toml
+OLHEIRO_DATASET=data/datasets/loja/dataset.toml uv run olheiro-app
+```
+
+Pergunte: “Qual o faturamento realizado por região?”. Para seus dados, substitua a pasta
+por outra pasta ou por um arquivo `.csv`/`.parquet`; `--glossary` é opcional. A configuração
+`OLHEIRO_DATASET` também vale para CLI, MCP e diagnóstico. Bases pessoais ficam em
+`data/datasets/`, fora do Git. Veja [o guia de bases](docs/datasets.md).
+
+A [auditoria do projeto](docs/auditoria-2026-10-27.md) registra os achados, o estado das fases
+e a sequência proposta: qualidade/semântica, avaliações em outros domínios e contexto de conversa.
 
 ## Demo para visitantes
 
@@ -95,7 +121,8 @@ visitantes e publicação online ficam para a próxima etapa.
 
 Detalhes em [docs/deployment.md](docs/deployment.md). A infraestrutura base passou na
 [CI com Docker](https://github.com/joaovitor2410/AnalisIA/actions/runs/40365502597).
-A CI desta etapa acrescenta cenários pessoal e demo; a versão nova será verificada no próximo push.
+A [CI do último push](https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772) passou
+nos cenários pessoal e demo. As mudanças de importação desta etapa aguardam novo push aprovado.
 
 ## Arquitetura
 
@@ -156,9 +183,10 @@ uv run olheiro-eval --model google:gemini-3.8-flash
 O comando apresenta estimativa e pede confirmação de custo. Testes com modelo falso não
 substituem a rodada real.
 
-Perguntas são independentes, sem memória de conversa. O texto do cache pode ficar antigo
-se os dados mudarem, embora a tabela seja reexecutada. Dashboard, cache e logs pertencem à
-instância no modo pessoal. A demo usa estado por sessão, sem persistência entre sessões.
+Perguntas são independentes, sem memória de conversa. O cache invalida respostas quando a
+revisão dos dados/glossário ou a evidência muda. Dashboard, cache e registros pertencem à base
+no modo pessoal; traces da interface têm destino comum por processo. A demo usa estado por
+sessão, sem persistência entre sessões.
 Logs ainda não têm rotação.
 DuckDB permanece na linha 1.5; a migração para 2.x requer teste separado dos bancos.
 

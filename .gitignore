@@ -19,6 +19,8 @@ data/answer_cache.json
 data/dashboard.json
 data/runs.jsonl
 data/traces.jsonl
+# Bases particulares importadas (inclui cópias dos CSVs/Parquets e estado por base)
+data/datasets/
 
 # Exportações geradas pelo agente
 data/exports/*

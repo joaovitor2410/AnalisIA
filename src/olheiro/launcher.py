@@ -14,7 +14,7 @@ import duckdb
 
 from olheiro.check_setup import check_glossary_sync, check_tables
 from olheiro.config import Settings, get_settings
-from olheiro.db import WorkspaceInUseError, connect, connect_agent, find_csv_files, load_raw_dir
+from olheiro.db import WorkspaceInUseError, connect, connect_agent, find_data_files, load_raw_dir
 
 
 def validate_database(settings: Settings) -> None:
@@ -29,8 +29,8 @@ def ensure_database(settings: Settings) -> bool:
     if settings.duckdb_path.exists():
         validate_database(settings)
         return False
-    if not find_csv_files(settings.raw_data_dir):
-        raise ValueError(f"Nenhum CSV em {settings.raw_data_dir}. Consulte data/raw/SOURCE.md.")
+    if not find_data_files(settings.raw_data_dir):
+        raise ValueError(f"Nenhum CSV ou Parquet em {settings.raw_data_dir}.")
     settings.duckdb_path.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix="olheiro-load-", dir=settings.duckdb_path.parent) as folder:
         candidate = Path(folder) / "olheiro.duckdb"
@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> None:
         try:
             settings = get_settings()
             if ensure_database(settings):
-                print("Base de demonstração inicializada a partir dos CSVs.", flush=True)
+                print("Base inicializada a partir dos arquivos CSV/Parquet.", flush=True)
             # Detecta a disputa antes de subir outra instância do servidor. Fecha a conexão
             # imediatamente; o app repete a verificação se houver corrida entre processos.
             with connect_agent(

@@ -25,6 +25,7 @@ olheiro-ask = "olheiro.cli:main"
 olheiro-eval = "olheiro.evaluation:main"
 olheiro-mcp = "olheiro.mcp_server:main"
 olheiro-app = "olheiro.launcher:main"
+olheiro-dataset = "olheiro.datasets:main"
 
 [dependency-groups]
 dev = [

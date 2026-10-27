@@ -4,10 +4,11 @@ Toda configuração passa por aqui: nenhum outro módulo lê os.environ diretame
 Assim, trocar de modelo/provedor é só mudar o .env.
 """
 
+import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # src/olheiro/config.py -> parents[2] é a raiz do projeto
@@ -18,6 +19,15 @@ PROVIDER_KEY_FIELDS: dict[str, str] = {
     "google": "google_api_key",
     "anthropic": "anthropic_api_key",
 }
+
+
+class DatasetManifest(BaseModel):
+    """Metadados de uma base local; os caminhos do estado são relativos ao manifesto."""
+
+    model_config = ConfigDict(extra="forbid")
+    version: Literal[1] = 1
+    title: str = Field(min_length=1, max_length=120)
+    glossary: bool = False
 
 
 class Settings(BaseSettings):
@@ -39,9 +49,14 @@ class Settings(BaseSettings):
     raw_data_dir: Path = Path("data/raw")
     exports_dir: Path = Path("data/exports")
     workspace_path: Path = Path("data/workspace.duckdb")
-    glossary_path: Path = Path("semantic/glossary.toml")
+    glossary_path: Path | None = Path("semantic/glossary.toml")
     answer_cache_path: Path = Path("data/answer_cache.json")
     dashboard_path: Path = Path("data/dashboard.json")
+    datasets_dir: Path = Path("data/datasets")
+    olheiro_dataset: Path | None = None
+    olheiro_workspace_override: Path | None = None
+    dataset_title: str = "Brasileirão Série A 2003–2024"
+    olheiro_import_max_mb: int = Field(default=50, ge=1)
     # Perguntas que vão ao modelo por sessão do app (respostas do cache não contam).
     # Vazio = sem limite (uso local); numa demo pública, protege a cota do nível gratuito.
     olheiro_session_question_limit: int | None = Field(default=None, ge=0)
@@ -70,11 +85,38 @@ class Settings(BaseSettings):
         "traces_path",
         "runs_path",
         "demo_examples_path",
+        "datasets_dir",
+        "olheiro_dataset",
+        "olheiro_workspace_override",
     )
     @classmethod
-    def _resolve_from_root(cls, path: Path) -> Path:
+    def _resolve_from_root(cls, path: Path | None) -> Path | None:
         """Caminhos relativos são relativos à raiz do projeto, não à pasta atual."""
-        return path if path.is_absolute() else PROJECT_ROOT / path
+        return path if path is None or path.is_absolute() else PROJECT_ROOT / path
+
+    def for_dataset(self, path: Path) -> "Settings":
+        """Aplica uma base sem carregar segredos do manifesto nem reutilizar estado pessoal."""
+        if self.olheiro_demo_mode:
+            raise ValueError("A demonstração usa uma base fixa e não permite trocar os dados.")
+        path = path.resolve()
+        with path.open("rb") as file:
+            manifest = DatasetManifest.model_validate(tomllib.load(file))
+        root = path.parent
+        return self.model_copy(
+            update={
+                "olheiro_dataset": path,
+                "dataset_title": manifest.title,
+                "duckdb_path": root / "source.duckdb",
+                "raw_data_dir": root / "raw",
+                "glossary_path": root / "glossary.toml" if manifest.glossary else None,
+                "workspace_path": self.olheiro_workspace_override or root / "workspace.duckdb",
+                "answer_cache_path": root / "answer_cache.json",
+                "dashboard_path": root / "dashboard.json",
+                "exports_dir": root / "exports",
+                "runs_path": root / "runs.jsonl",
+                "traces_path": root / "traces.jsonl",
+            }
+        )
 
     @property
     def provider(self) -> str:
@@ -101,4 +143,5 @@ class Settings(BaseSettings):
 
 def get_settings() -> Settings:
     """Lê as configurações atuais (.env + ambiente)."""
-    return Settings()
+    settings = Settings()
+    return settings.for_dataset(settings.olheiro_dataset) if settings.olheiro_dataset else settings

@@ -22,6 +22,7 @@ from pydantic_ai.exceptions import AgentRunError, FallbackExceptionGroup
 from olheiro.agent import AgentDeps, AgentReport, AnalysisAnswer, PendingApproval, ask, build_model
 from olheiro.cache import AnswerCache
 from olheiro.config import Settings, get_settings
+from olheiro.datasets import cache_revision
 from olheiro.db import connect_agent, session_cursor
 from olheiro.errors import explain_model_failure
 from olheiro.semantic import Glossary, load_glossary, render_context
@@ -103,7 +104,7 @@ def analyze(question: str, state: ServerState, use_cache: bool) -> AnalysisResul
                         "O MCP do Olheiro permite apenas leitura. Nenhuma tabela foi gravada. "
                         "Para salvar com aprovação humana, use o app ou olheiro-ask."
                     )
-                if use_cache:
+                if use_cache and outcome.output.answerable:
                     state.cache.store(question, outcome)
                 result = AnalysisResult.from_report(outcome)
                 run.finish(outcome)
@@ -128,7 +129,7 @@ def create_server(settings: Settings | None = None) -> MCPServer[ServerState]:
                 config,
                 con,
                 glossary,
-                AnswerCache(config.answer_cache_path),
+                AnswerCache(config.answer_cache_path, cache_revision(config)),
                 RunLog(config.runs_path),
             )
             yield state
@@ -139,7 +140,7 @@ def create_server(settings: Settings | None = None) -> MCPServer[ServerState]:
     server = MCPServer(
         "Olheiro",
         instructions=(
-            "Analista de dados do Brasileirão. Leia olheiro://context para conhecer tabelas, "
+            "Analista de dados tabulares. Leia olheiro://context para conhecer tabelas, "
             "valores e regras. run_sql e profile_column não chamam o Gemini; ask_question "
             "delega ao agente e pode consumir cota. Só leitura; SQL DuckDB, até 50 linhas. "
             "Responda em português, mostre SQL e evidência e respeite empates e dados ausentes."
@@ -154,7 +155,7 @@ def create_server(settings: Settings | None = None) -> MCPServer[ServerState]:
     ) -> EvidenceTable:
         """Executa um SELECT DuckDB validado, sem LLM. Retorna até 50 linhas e truncated.
 
-        Use tabelas qualificadas (raw.brasileirao, raw.teams ou workspace.<nome>).
+        Use tabelas qualificadas (raw.<tabela> ou workspace.<nome>).
         Consulte olheiro://context antes de escolher colunas e filtros.
         """
         try:

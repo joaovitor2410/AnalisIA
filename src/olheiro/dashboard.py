@@ -30,6 +30,7 @@ class DashboardItem(BaseModel):
 
 
 class Dashboard(BaseModel):
+    namespace: str | None = None
     items: list[DashboardItem] = []
 
 
@@ -44,11 +45,21 @@ class RenderedItem:
 
 
 class DashboardStore:
-    def __init__(self, path: Path | None) -> None:
+    def __init__(
+        self, path: Path | None, namespace: str | None = None, *, allow_legacy: bool = False
+    ) -> None:
         self.file = JsonFile(path, Dashboard) if path is not None else MemoryStore(Dashboard)
+        self.namespace = namespace
+        self.allow_legacy = allow_legacy
+
+    def _matches(self, dashboard: Dashboard) -> bool:
+        return dashboard.namespace == self.namespace or (
+            self.allow_legacy and dashboard.namespace is None
+        )
 
     def read(self) -> Dashboard:
-        return self.file.read()
+        dashboard = self.file.read()
+        return dashboard if self._matches(dashboard) else Dashboard(namespace=self.namespace)
 
     def pin(self, question: str, report: AgentReport) -> DashboardItem:
         """Fixa uma resposta. Só respostas com evidência (SQL válido) podem ir para o painel."""
@@ -59,11 +70,17 @@ class DashboardStore:
         title = output.chart.title if output.chart else question
         item = DashboardItem(title=title, question=question, sql=output.sql, chart=output.chart)
         with self.file.update() as dashboard:
+            if not self._matches(dashboard):
+                dashboard.items = []
+            dashboard.namespace = self.namespace
             dashboard.items.append(item)
         return item
 
     def unpin(self, item_id: str) -> None:
         with self.file.update() as dashboard:
+            if not self._matches(dashboard):
+                return
+            dashboard.namespace = self.namespace
             dashboard.items = [item for item in dashboard.items if item.id != item_id]
 
 

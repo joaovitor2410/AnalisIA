@@ -53,6 +53,18 @@ uv run python -m olheiro.mcp_server
 Ele aguarda mensagens MCP, sem abrir um prompt de terminal. Use o cliente de demonstração
 ou um host MCP para conversar; `Ctrl-C` encerra a execução manual.
 
+Para analisar outra base CSV/Parquet importada na F9A:
+
+```bash
+OLHEIRO_DATASET=data/datasets/loja/dataset.toml uv run olheiro-mcp
+```
+
+O contrato é o mesmo: leia `olheiro://context` para conhecer a base ativa. O cliente em
+`examples/mcp_client.py` sem argumentos continua sendo uma demonstração do Brasileirão.
+Na configuração de um host MCP, a variável pode ser passada em `env` junto de `command` e
+`args`. Glossário é opcional. Importação e concorrência de processos estão em
+[datasets.md](datasets.md).
+
 ## Contrato exposto
 
 | Capacidade | Entrada | Resultado | Gemini no servidor |

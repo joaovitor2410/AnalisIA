@@ -8,10 +8,13 @@ import http.client
 import os
 import socket
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
+import duckdb
 from streamlit.testing.v1 import AppTest
 
-from olheiro.config import get_settings
+from olheiro.config import Settings, get_settings
+from olheiro.datasets import import_dataset
 from olheiro.db import connect_agent, scalar
 from olheiro.launcher import ensure_database
 from olheiro.tools import run_sql
@@ -41,6 +44,32 @@ def check_network() -> None:
         allowed.connect()
     finally:
         allowed.close()
+
+
+def check_import(settings: Settings) -> None:
+    """Confere CSV e Parquet no volume gravável, sem tocar na base usada pela interface."""
+    settings.datasets_dir.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix="smoke-import-", dir=settings.datasets_dir) as folder:
+        root = Path(folder)
+        csv = root / "pedidos.csv"
+        csv.write_text("cliente_id;valor\n1;10\n2;20\n", encoding="utf-8")
+        parquet = root / "clientes.parquet"
+        with duckdb.connect() as con:
+            con.execute(
+                "COPY (SELECT * FROM (VALUES (1), (2)) t(cliente_id)) TO ? (FORMAT PARQUET)",
+                [str(parquet)],
+            )
+        manifest = import_dataset([csv, parquet], root / "bases", "loja", "Loja")
+        # A demo não oferece importação; esta verificação exercita apenas o backend local.
+        config = settings.model_copy(update={"olheiro_demo_mode": False}).for_dataset(manifest)
+        with connect_agent(config.duckdb_path, None) as con:
+            assert (
+                scalar(
+                    con, "SELECT sum(valor) FROM raw.pedidos JOIN raw.clientes USING (cliente_id)"
+                )
+                == 30
+            )
+            assert "error" in run_sql(con, "SELECT * FROM read_csv('/etc/hosts')")
 
 
 def main() -> None:
@@ -83,6 +112,7 @@ def main() -> None:
             settings.workspace_path.read_bytes() if settings.workspace_path.exists() else None
         )
         assert workspace_before == workspace_after, "A demo alterou o workspace pessoal."
+    check_import(settings)
     check_network()
     print("OK: base, blindagem, usuário, filesystem, interface e saída de rede verificados.")
 

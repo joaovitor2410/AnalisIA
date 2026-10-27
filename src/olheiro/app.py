@@ -6,6 +6,8 @@ Rodar:
 
 import streamlit as st
 
+from olheiro.config import get_settings
+from olheiro.datasets import discover_datasets
 from olheiro.db import WorkspaceInUseError
 from olheiro.ui.ask_page import ask_page
 from olheiro.ui.dashboard_page import dashboard_page
@@ -15,12 +17,30 @@ from olheiro.ui.resources import load_resources
 
 
 def show_sidebar() -> None:
+    settings = get_settings()
+    if not settings.olheiro_demo_mode:
+        datasets = discover_datasets(settings.datasets_dir)
+        if settings.olheiro_dataset:
+            datasets.pop(settings.olheiro_dataset, None)
+        options = [None, *map(str, datasets)]
+        labels = {str(path): title for path, title in datasets.items()}
+        if "next_dataset" in st.session_state:
+            st.session_state.selected_dataset = st.session_state.pop("next_dataset")
+        if st.session_state.get("selected_dataset") not in options:
+            st.session_state.selected_dataset = None
+        st.selectbox(
+            "Base de dados",
+            options,
+            key="selected_dataset",
+            format_func=lambda value: labels.get(value, settings.dataset_title),
+        )
     resources = load_resources()
     st.markdown("### Olheiro")
     st.caption(
         "Analista de dados com IA: pergunte em português e receba a resposta com o SQL, "
         "a tabela e o gráfico que a sustentam."
     )
+    st.caption(f"Base ativa: {resources.settings.dataset_title}")
     demo = resources.settings.olheiro_demo_mode
     if demo:
         st.caption("Modo demonstração · seu dashboard pertence a esta sessão")

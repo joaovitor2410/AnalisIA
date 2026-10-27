@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import duckdb
 
-from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG, scalar
+from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG, quote_identifier, scalar
 from olheiro.sql_guard import UnsafeQueryError, check_query
 
 # Mais que isso enche o contexto do modelo sem ajudar a responder; ele deve agregar ou usar LIMIT.
@@ -134,8 +134,7 @@ def column_profile(con: duckdb.DuckDBPyConnection, table: str, column: str) -> C
     if found is None:
         raise ValueError(f"Coluna '{column}' não existe em {RAW_SCHEMA}.{table}. Confira o schema.")
 
-    # Seguro interpolar: tabela e coluna acabaram de ser confirmadas no catálogo do banco.
-    source, col = f'{RAW_SCHEMA}."{table}"', f'"{column}"'
+    source, col = f"{RAW_SCHEMA}.{quote_identifier(table)}", quote_identifier(column)
     stats = query_rows(
         con,
         f"""

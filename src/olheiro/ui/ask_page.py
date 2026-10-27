@@ -47,7 +47,7 @@ def ask_page() -> None:
 
     st.title("Perguntar aos dados")
     st.caption(
-        "Brasileirão Série A 2003–2024. Cada resposta traz o SQL e a tabela que a sustentam."
+        f"{resources.settings.dataset_title}. Cada resposta traz o SQL e a tabela que a sustentam."
     )
     show_examples(resources)
     if resources.settings.olheiro_demo_mode:
@@ -59,7 +59,7 @@ def ask_page() -> None:
     if pending is not None:
         show_approval(pending, resources, deps)
 
-    typed = st.chat_input("Pergunte sobre o Brasileirão 2003–2024", disabled=pending is not None)
+    typed = st.chat_input("Pergunte sobre a base selecionada", disabled=pending is not None)
     question = typed or st.session_state.pop("queued_question", None)
     if question:
         with st.chat_message("user"):

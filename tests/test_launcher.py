@@ -45,11 +45,11 @@ def test_failed_load_leaves_no_database_or_temporary_files(
 ) -> None:
     raw = tmp_path / "raw"
     raw.mkdir()
-    # Os dois nomes normalizam para a mesma tabela: a segunda carga falha.
+    # Os dois nomes normalizam para a mesma tabela: a carga recusa antes de alterar raw.
     (raw / "same.csv").write_text("n\n1\n", encoding="utf-8")
     (raw / "same!.csv").write_text("n\n2\n", encoding="utf-8")
     config = settings.model_copy(update={"raw_data_dir": raw})
-    with pytest.raises(duckdb.CatalogException):
+    with pytest.raises(ValueError, match="conflito"):
         ensure_database(config)
     assert not config.duckdb_path.exists()
     assert not list(config.duckdb_path.parent.iterdir())

@@ -65,6 +65,16 @@ def test_cache_entry_with_unsafe_sql_counts_as_a_miss(
     assert cache.lookup("q", con) is None
 
 
+def test_cache_with_chart_outside_evidence_counts_as_a_miss(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    cache = AnswerCache(tmp_path / "cache.json")
+    cache.store("q", report(con))
+    with cache.file.update() as data:
+        data.answers["q"].output.chart = ChartSpec(kind="metric", y="missing", title="Inválido")
+    assert cache.lookup("q", con) is None
+
+
 def test_paused_runs_are_not_cached(con: duckdb.DuckDBPyConnection, tmp_path: Path) -> None:
     model = FunctionModel(
         lambda messages, info: ModelResponse(
@@ -76,6 +86,25 @@ def test_paused_runs_are_not_cached(con: duckdb.DuckDBPyConnection, tmp_path: Pa
     outcome = ask_with_cache("salve", AgentDeps(con), cache, model)
 
     assert isinstance(outcome, PendingApproval)
+    assert cache.questions() == []
+
+
+def test_generated_refusal_is_not_cached_as_workspace_can_gain_new_tables(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    model = FunctionModel(
+        lambda messages, info: ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {"answerable": False, "answer": "Não há dados suficientes."},
+                )
+            ]
+        )
+    )
+    cache = AnswerCache(tmp_path / "cache.json")
+    outcome = ask_with_cache("Há dados novos?", AgentDeps(con), cache, model)
+    assert isinstance(outcome, AgentReport) and not outcome.output.answerable
     assert cache.questions() == []
 
 

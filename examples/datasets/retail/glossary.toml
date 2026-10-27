@@ -1,0 +1,14 @@
+rules = [
+  "Dados inteiramente sintéticos, criados para demonstrar outro domínio analítico.",
+  "Cada linha de orders é um pedido; customer_id referencia customers.customer_id.",
+  "Faturamento realizado considera apenas pedidos com status = 'concluido'.",
+]
+
+[tables.orders]
+description = "Pedidos sintéticos de uma loja. Granularidade: um pedido por linha."
+[tables.orders.columns]
+amount = "Valor total do pedido em reais (BRL), já considerando todos os seus itens."
+status = { description = "Situação do pedido.", list_values = true }
+
+[tables.customers]
+description = "Cadastro sintético de clientes. customer_id é único nesta tabela."

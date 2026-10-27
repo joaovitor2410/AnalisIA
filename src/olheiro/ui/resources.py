@@ -6,6 +6,7 @@ Na demo, cache e dashboard ficam em memória por sessão; o workspace pessoal n�
 """
 
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import cast
 
 import duckdb
@@ -16,8 +17,9 @@ from pydantic_ai.usage import UsageLimits
 
 from olheiro.agent import AgentDeps, build_model
 from olheiro.cache import AnswerCache
-from olheiro.config import Settings, get_settings
+from olheiro.config import PROJECT_ROOT, Settings, get_settings
 from olheiro.dashboard import DashboardStore
+from olheiro.datasets import cache_revision, dataset_identity
 from olheiro.db import connect_agent, session_cursor
 from olheiro.demo import QuestionBudget, load_examples
 from olheiro.semantic import Glossary, load_glossary
@@ -39,9 +41,16 @@ class AppResources:
 
 
 @st.cache_resource(show_spinner=False)
-def shared_resources() -> AppResources:
+def shared_resources(dataset_path: str | None = None) -> AppResources:
     pydantic_ai.BANNER_ENABLED = False
     settings = get_settings()
+    if dataset_path is not None:
+        # O provider OpenTelemetry é global por processo. Registros ficam por base;
+        # traces da interface usam o destino comum da instância, inclusive após a troca.
+        trace_path = settings.traces_path
+        settings = settings.for_dataset(Path(dataset_path)).model_copy(
+            update={"traces_path": trace_path}
+        )
     if settings.olheiro_demo_mode:
         # Exceções em spans de bibliotecas podem conter argumentos mesmo sem payloads.
         # Na demo ficam apenas métricas locais com conteúdo omitido, sem traces detalhados.
@@ -65,14 +74,18 @@ def shared_resources() -> AppResources:
         cache = (
             load_examples(settings.demo_examples_path, con)
             if demo
-            else AnswerCache(settings.answer_cache_path)
+            else AnswerCache(settings.answer_cache_path, cache_revision(settings))
         )
         return AppResources(
             settings=settings,
             con=con,
             glossary=glossary,
             cache=cache,
-            dashboard=DashboardStore(None if demo else settings.dashboard_path),
+            dashboard=DashboardStore(
+                None if demo else settings.dashboard_path,
+                None if demo else dataset_identity(settings),
+                allow_legacy=settings.duckdb_path == PROJECT_ROOT / "data/olheiro.duckdb",
+            ),
             runs=RunLog(settings.runs_path, include_content=not demo),
             model=model,
             model_error=model_error,
@@ -85,7 +98,15 @@ def shared_resources() -> AppResources:
 
 def load_resources() -> AppResources:
     """Dados públicos compartilhados; cache e painel privados para cada sessão da demo."""
-    shared = shared_resources()
+    shared = shared_resources(st.session_state.get("selected_dataset"))
+    previous = st.session_state.get("resource_connection")
+    if previous is not shared.con:
+        old_deps = st.session_state.pop("deps", None)
+        if old_deps is not None:
+            old_deps.con.close()
+        for key in ("history", "pending", "queued_question", "example", "demo_resources"):
+            st.session_state.pop(key, None)
+        st.session_state.resource_connection = shared.con
     if not shared.settings.olheiro_demo_mode:
         return shared
     if "demo_resources" not in st.session_state:

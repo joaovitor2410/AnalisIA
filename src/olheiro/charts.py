@@ -20,7 +20,7 @@ class ChartSpec(BaseModel):
 
     kind: Literal["bar", "line", "metric"] = Field(
         description=(
-            "'bar' para comparar categorias; 'line' para evolução ao longo das temporadas; "
+            "'bar' para comparar categorias; 'line' para evolução ao longo do tempo; "
             "'metric' para um número em destaque (KPI), lido da primeira linha do resultado."
         )
     )

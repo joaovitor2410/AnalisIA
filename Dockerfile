@@ -29,6 +29,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     DASHBOARD_PATH=/state/dashboard.json \
     RUNS_PATH=/state/runs.jsonl \
     TRACES_PATH=/state/traces.jsonl \
+    DATASETS_DIR=/state/datasets \
     EXPORTS_DIR=/state/exports
 WORKDIR /app
 COPY --from=builder /app /app

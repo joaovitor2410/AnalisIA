@@ -17,8 +17,13 @@ Em 2026-10-26, o autor escolheu **preparar Docker e CI primeiro (F8A)**; publica
 fica para a F8B. Autorizou e recebeu o push da F7 (`4f667ce`) em `origin/main`.
 Depois autorizou o push da F8A/correção de lock e escolheu **preparar a demo antes de publicar**:
 F8B = demonstração local; hospedagem e publicação passam à F8C. F8A validada no runner Linux.
+Em **2026-10-27**, o autor pediu uma varredura completa e autorizou mudanças para analisar
+outras bases. Escolheu **CSV e Parquet** como primeiras fontes. **F9A** prioriza esse núcleo
+flexível antes da publicação; a auditoria e o próximo roteiro estão em
+`docs/auditoria-2026-10-27.md`.
 - Funções: chat analítico com evidência e passos do agente; dashboard (fixar respostas, KPIs);
-  explorador de dados; perguntas prontas via cache. Upload de CSV do visitante: fora por ora.
+  explorador de dados; perguntas prontas via cache; importação/seleção de bases pessoais
+  CSV/Parquet (F9A). Upload do visitante da demo continua fora do escopo.
 - Ideia central: o LLM **cria** a análise uma vez; dashboard e cache **reexecutam** o SQL
   validado, sem o modelo (custo zero, sempre com os dados atuais).
 - Demo pública (quando publicar): cache + limite de perguntas por sessão (escolha do autor).
@@ -110,6 +115,9 @@ F8B = demonstração local; hospedagem e publicação passam à F8C. F8A validad
 | F8B: exemplos em TOML, curadoria SQL sem LLM | `demo/examples.toml`, seis exemplos validados e executados ao iniciar; `AnalysisAnswer`/`ChartSpec` reutilizados. Cada sessão recebe cópia do cache; cada resposta reexecuta o SQL. Textos evitam números fixos, ranking inclui empates e aproveitamento usa pontos/(3*jogos). |
 | F8B: chamadas ao Gemini exigem opt-in | `OLHEIRO_DEMO_MODEL_ENABLED=false` por padrão, mesmo com chave pessoal presente. Quando habilitado: cinco tentativas por sessão por padrão, dez por processo (`OLHEIRO_DEMO_TOTAL_QUESTION_LIMIT`, lock) e `UsageLimits(request_limit=6, tool_calls_limit=12)` por análise. Cache é livre. Orçamento de instância reinicia com o processo e não é controle financeiro do provedor. |
 | F8B: somente leitura e privacidade | `AgentDeps.allow_saves=false` retira `save_result` via `prepare`; guarda na função também recusa. Operação sai da navegação e recusa invocação direta. `RunLog(include_content=False)` omite pergunta e texto de erro. Traces detalhados ficam obrigatoriamente off na demo, pois exceções de bibliotecas podem conter argumentos além do payload. |
+| F9A: bases locais independentes | `olheiro-dataset import` ou upload pessoal cria cópias de CSV/Parquet e banco materializado; manifesto publicado depois da validação. Nomes duplicados/arquivos inválidos não substituem bases existentes. `OLHEIRO_DATASET` aplica o mesmo perfil a app, CLI, diagnóstico e MCP. |
+| F9A: contexto de qualquer domínio | Glossário opcional/parcial; nomes e tipos vêm do catálogo. Instruções pedem exploração, unidade/granularidade explícitas e verificação de cardinalidade antes de JOINs. Valores de glossário têm limite, aviso de truncamento e timeout. Escape também em nomes do catálogo e caminhos. |
+| F9A: estado e revisão | Cache por identidade/conteúdo de banco+glossário, com comparação da evidência e validação do gráfico; recusa antiga também invalida. Dashboard por identidade estável; painel legado do exemplo preservado. Troca de base fecha cursor e limpa histórico/aprovação, sem zerar a quota. Logs por base; traces UI no destino comum do processo OpenTelemetry. |
 | F3: defesa em profundidade, 3 camadas independentes | Cada uma bloqueia sozinha: (1) `sql_guard` (sqlglot), (2) motor DuckDB blindado, (3) aprovação humana para gravar. |
 | Camada 1, `sql_guard.check_query` | Uma única consulta (`exp.Query`); toda tabela é um nome (não função/arquivo) em `raw`/`workspace` ou um CTE. Bloqueia `read_csv(...)`, `FROM 'arquivo'`, DDL/DML, `COPY`, `ATTACH`, `SET`, catálogo explícito. Erros sem códigos de cor (campos de `ParseError.errors`). |
 | Camada 2, `db.connect_agent` | Conexão `:memory:` com `ATTACH olheiro.duckdb (READ_ONLY)` + `USE lake`, `ATTACH workspace.duckdb`, `enable_external_access=false`, autoload/autoinstall de extensões desligados, `memory_limit=1GB`, `lock_configuration=true` (por último). Testado: escrever em raw, ler/gravar arquivo, ATTACH, INSTALL e destravar config falham no motor. |
@@ -155,7 +163,8 @@ Claude Code.
 ## Estrutura
 ```
 src/olheiro/config.py       configurações (Settings)
-src/olheiro/db.py           carga de CSVs (olheiro-load) e conexão blindada do agente
+src/olheiro/db.py           carga de CSV/Parquet (olheiro-load) e conexão blindada do agente
+src/olheiro/datasets.py     importação, descoberta, identidade e revisão de bases locais
 src/olheiro/check_setup.py  diagnóstico do ambiente (comando olheiro-check)
 src/olheiro/tools.py        execução de SQL (query_rows, com timeout) e ferramentas: run_sql,
                             profile_column, save_result
@@ -185,6 +194,9 @@ deploy/                    Dockerfile/config Squid e smoke do runtime sem Gemini
 .github/workflows/ci.yml   qualidade, build do pacote e verificação dos contêineres
 docs/deployment.md          operação, validação e limites da entrega F8A
 docs/demo.md                modo demo, isolamento de sessões, limites e privacidade
+docs/datasets.md            upload/importação, semântica opcional e estado por base (F9A)
+docs/auditoria-2026-10-27.md  achados, etapas concluídas e roteiro priorizado
+examples/datasets/retail/   pedidos/clientes sintéticos e glossário parcial de demonstração
 data/raw/SOURCE.md          fonte Kaggle, condições informadas e hashes dos CSVs
 evals/cases.yaml            39 casos com gabarito em 7 categorias
 evals/results/              resultados por modelo + README comparativo
@@ -273,10 +285,34 @@ data/exports/               exportações do agente (ignorado no Git)
     em 4,67 s**, `gemini-3.8-flash`; pergunta omitida do registro e nenhum arquivo de trace.
     Prévia local na porta 8503, funcionando ao lado do app pessoal na 8501 sem disputa de workspace.
     CI estendida para matriz pessoal/demo e smoke de isolamento de visitantes; essa ampliação
-    aguarda o próximo push aprovado, sem alegação de validação remota da versão nova.
+    **passou após o push autorizado de `845767d` em 2026-10-27**, execução `40502502772`:
+    https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772 .
     Rodar: `OLHEIRO_DEMO_MODE=true uv run olheiro-app --server.port=8503`.
   - **F8C pendente:** hospedagem, acesso, condições de redistribuição dos dados e publicação.
     Migração DuckDB 2.x continua separada, com cópias e estratégia de retorno.
+- [x] **Fase 9A: núcleo flexível para CSV/Parquet (2026-10-27).** Escolha explícita do autor.
+  Auditoria do código, interfaces, dados, testes, evals, observabilidade, infraestrutura e roteiro.
+  Importação por `olheiro-dataset import` e upload na página Dados (modo pessoal), seleção na
+  barra lateral, catálogo automático e glossário opcional/parcial. Bases próprias, misturando
+  CSV e Parquet, sem acoplamento ao futebol no motor. Exemplo sintético de varejo.
+  Cópias de entrada + banco/estado por base, ignorados pelo Git; falhas não publicam nem
+  substituem a base existente. Proteção contra cache de outra revisão/domínio, escape de
+  nomes/caminhos, contexto limitado e tabelas vazias aceitas. Recusas novas não são cacheadas,
+  pois novas tabelas de workspace podem torná-las respondíveis; a recusa curada da demo permanece.
+  Demo preserva base fixa e isolamento.
+  `DATASETS_DIR=/state/datasets` no Docker; proxy aceita 64 MB para o limite pessoal de 50 MB;
+  smoke ampliado com CSV/Parquet e teste de escrita no volume.
+  **194 testes offline**, também numa cópia limpa sem `.env`; Ruff lint/format, mypy e build
+  wheel/sdist. Comandos instalados de
+  importação/listagem e diagnóstico verificados em diretório temporário; etapa de ingestão
+  do smoke executada localmente. Wheel confere módulo/entrypoint sem dados/segredos.
+  Sem chamadas adicionais ao Gemini nesta fase; testes com modelo falso não substituem
+  benchmark real. Docker completo da versão nova depende de CI após push autorizado.
+  Rodar: `uv sync --locked && uv run olheiro-app`; Dados → Importar outra base.
+  Testar: `uv run pytest -q`, `uv run ruff check .`, `uv run ruff format --check .`,
+  `uv run mypy`, `uv build`. Importação reproduzível em `docs/datasets.md`.
+  **Próxima fase sugerida: F9B, qualidade e semântica dos dados** (prévia/tipos, duplicidades,
+  chaves/relacionamentos e editor de regras). Não iniciar sem o ok do autor ao fim da F9A.
 
 ## Pendências / em aberto
 - **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB
@@ -290,13 +326,15 @@ data/exports/               exportações do agente (ignorado no Git)
   por elicitation ficam para uma evolução futura; não há aprovação por argumento do modelo.
   `OLHEIRO_SESSION_QUESTION_LIMIT` limita só o app Streamlit, não o MCP local. Configuração de
   clientes documentada, sem alterar arquivos do Claude automaticamente.
-- **Para a publicação (F8C):** decidir hospedagem/acesso e condições dos dados; validar a matriz
-  Docker com a demo após push; configurar limites no provedor se habilitar novas perguntas.
+- **Para a publicação (F8C):** decidir hospedagem/acesso e condições dos dados; validar a imagem
+  com importação F9A após push (matriz F8B já verde); limites no provedor se habilitar perguntas.
   A F8B já prepara exemplos versionados e estado por sessão. O orçamento é por processo:
   reinícios/replicação precisam ser considerados na hospedagem.
 - **Limitações conhecidas:** perguntas independentes (sem memória de conversa: "e em 2020?" não
-  funciona); resposta do cache pode ficar com texto desatualizado se os dados mudarem (os
-  números não, pois o SQL é reexecutado). Apagar `data/answer_cache.json` limpa o cache.
+  funciona). F9A invalida caches de outra revisão; cache legado é regenerado. JSONs ainda
+  usam locks por objeto/thread, sem coordenação entre processos/réplicas. UI mantém conexões
+  das bases selecionadas no cache; medir ciclo de vida/memória com muitas bases. Inferência
+  automática de CSV ainda precisa de prévia e ajuste de tipos/codificação na F9B.
 - Empates: Corinthians e Palmeiras têm 4 títulos cada. Um teste meu com `LIMIT 1` escondeu o
   empate; o agente agora recebe a regra "confira empates (RANK() = 1)".
 - Aviso `DeprecationWarning: There is no current event loop` vem do `pydantic_graph` no

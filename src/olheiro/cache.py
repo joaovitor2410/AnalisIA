@@ -6,19 +6,22 @@ reexecutado, então os números vêm sempre do banco atual. A chave é a pergunt
 demo funcionando mesmo sem cota.
 """
 
+import hashlib
 import re
 import unicodedata
 from datetime import datetime
 from pathlib import Path
 
 import duckdb
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 
 from olheiro.agent import AgentDeps, AgentReport, AnalysisAnswer, PendingApproval, ask, build_report
+from olheiro.charts import check_chart
 from olheiro.sql_guard import UnsafeQueryError, check_query
 from olheiro.storage import JsonFile, MemoryStore
+from olheiro.tools import QueryResult
 
 
 class CachedAnswer(BaseModel):
@@ -26,10 +29,18 @@ class CachedAnswer(BaseModel):
     output: AnalysisAnswer
     model_name: str
     created_at: datetime
+    evidence_hash: str | None = None
 
 
 class CacheFile(BaseModel):
+    namespace: str | None = None
     answers: dict[str, CachedAnswer] = {}
+
+
+def evidence_hash(evidence: QueryResult | None) -> str:
+    """Compara também o resultado: texto antigo não acompanha uma evidência alterada."""
+    encoded = TypeAdapter(QueryResult | None).dump_json(evidence, fallback=str)
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def normalize_question(question: str) -> str:
@@ -39,11 +50,13 @@ def normalize_question(question: str) -> str:
 
 
 class AnswerCache:
-    def __init__(self, path: Path | None) -> None:
+    def __init__(self, path: Path | None, namespace: str | None = None) -> None:
         self.file = JsonFile(path, CacheFile) if path is not None else MemoryStore(CacheFile)
+        self.namespace = namespace
 
     def read(self) -> CacheFile:
-        return self.file.read()
+        cache = self.file.read()
+        return cache if cache.namespace == self.namespace else CacheFile(namespace=self.namespace)
 
     def questions(self) -> list[str]:
         """Perguntas já respondidas, na forma original: viram os exemplos do app."""
@@ -57,10 +70,18 @@ class AnswerCache:
         try:
             if entry.output.sql:
                 check_query(entry.output.sql)  # o arquivo pode ter sido editado à mão
-            return build_report(
+            report = build_report(
                 entry.output, con, entry.model_name, RunUsage(), [], from_cache=True
             )
-        except (UnsafeQueryError, duckdb.Error):
+            if entry.output.chart is not None and report.evidence is not None:
+                check_chart(entry.output.chart, report.evidence)
+            if (
+                entry.evidence_hash is not None
+                and evidence_hash(report.evidence) != entry.evidence_hash
+            ):
+                return None
+            return report
+        except (UnsafeQueryError, duckdb.Error, ValueError):
             return None  # SQL antigo não serve mais (ex.: coluna mudou): trata como ausente
 
     def store(self, question: str, report: AgentReport) -> None:
@@ -69,8 +90,12 @@ class AnswerCache:
             output=report.output,
             model_name=report.model_name,
             created_at=datetime.now(),
+            evidence_hash=evidence_hash(report.evidence),
         )
         with self.file.update() as cache:
+            if cache.namespace != self.namespace:
+                cache.answers = {}
+                cache.namespace = self.namespace
             cache.answers[normalize_question(question)] = entry
 
 
@@ -86,6 +111,8 @@ def ask_with_cache(
     if cached is not None:
         return cached
     outcome = ask(question, deps, model)
-    if isinstance(outcome, AgentReport):
+    # Uma recusa pode deixar de valer após salvar outra tabela em workspace. Só exemplos
+    # curados (load_examples) guardam recusas; respostas novas sem evidência não são cacheadas.
+    if isinstance(outcome, AgentReport) and outcome.output.answerable:
         cache.store(question, outcome)
     return outcome

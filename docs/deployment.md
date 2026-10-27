@@ -60,6 +60,7 @@ Não se copiam banco local, `.env`, cache pessoal, dashboard ou logs do autor.
 | `/app/data/olheiro.duckdb` | Banco derivado | Imagem, leitura |
 | `/app/semantic` | Glossário | Imagem, leitura |
 | `/state` | Workspace, cache, dashboard, logs e exportações | Volume `olheiro_state` |
+| `/state/datasets` | Bases pessoais CSV/Parquet importadas, com estado próprio | Mesmo volume |
 | `/tmp` | Arquivos temporários | tmpfs, descartado ao recriar |
 
 O usuário é `10001:10001`; capacidades Linux são removidas e novos privilégios bloqueados.
@@ -106,9 +107,14 @@ de leitura, ações fixadas por SHA, timeout e cancelamento de execuções antig
 
 A infraestrutura base foi validada no GitHub em 2026-10-26, no commit `dc48922`, pela
 [execução 40365502597](https://github.com/joaovitor2410/AnalisIA/actions/runs/40365502597):
-qualidade, build, smoke de isolamento e acesso HTTP pelo host passaram. A nova matriz cobre
-modo pessoal e demo e será executada após o próximo push autorizado. Docker segue ausente
+qualidade, build, smoke de isolamento e acesso HTTP pelo host passaram. A matriz pessoal/demo
+também passou no commit `845767d`, na
+[execução 40502502772](https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772).
+As alterações da F9A acrescentam importação CSV/Parquet ao smoke, `/state/datasets` gravável e
+limite HTTP de 64 MB; precisam de nova CI após push autorizado. Docker segue ausente
 neste Mac; a evidência de execução da infraestrutura vem do runner Linux.
+Uploads são encaminhados sem buffering de requisição no NGINX, para não ocupar todo o
+tmpfs de 32 MB do proxy com um arquivo permitido de até 50 MB.
 
 ## Backup e atualização
 
@@ -122,8 +128,9 @@ docker compose start
 
 O backup pode conter perguntas e respostas; mantenha-o privado. Restaure com a instância
 parada, preservando a escrita pelo UID 10001 em `/state`. Atualizar a imagem não requer
-apagar o volume. Após mudar CSVs/glossário, refaça o build e valide; o texto de respostas
-antigas no cache pode exigir revisão manual.
+apagar o volume. Após mudar os dados/glossário do exemplo, refaça o build e valide. O cache
+da F9A invalida respostas por revisão da base/semântica. Bases pessoais importadas persistem
+no volume; veja [datasets.md](datasets.md) para importação e recarga explícita.
 
 ## Próxima etapa
 
@@ -145,3 +152,5 @@ Referências consultadas em 2026-10-26:
 - [Controle de acesso Squid](https://www.squid-cache.org/Doc/config/http_access/)
 - [Migração DuckDB 2.0](https://www.duckdb.org/docs/2.0/clients/python/migration)
 - [Origem dos dados](../data/raw/SOURCE.md)
+
+Na F9A (2026-10-27): [buffering de requisições no NGINX](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_request_buffering).

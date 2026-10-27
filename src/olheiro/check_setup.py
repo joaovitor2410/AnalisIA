@@ -16,7 +16,8 @@ from olheiro.db import (
     WorkspaceInUseError,
     connect,
     connect_agent,
-    find_csv_files,
+    find_data_files,
+    quote_identifier,
     scalar,
     table_name_from_file,
 )
@@ -56,9 +57,9 @@ def check_model_key(settings: Settings) -> CheckResult:
 
 
 def check_raw_files(settings: Settings) -> CheckResult:
-    files = find_csv_files(settings.raw_data_dir)
-    detail = ", ".join(f.name for f in files) or f"nenhum CSV em {settings.raw_data_dir}"
-    return CheckResult(bool(files), "CSVs em data/raw", detail)
+    files = find_data_files(settings.raw_data_dir)
+    detail = ", ".join(f.name for f in files) or f"nenhum CSV ou Parquet em {settings.raw_data_dir}"
+    return CheckResult(bool(files), "Arquivos CSV/Parquet", detail)
 
 
 def check_database(settings: Settings) -> CheckResult:
@@ -73,22 +74,20 @@ def check_database(settings: Settings) -> CheckResult:
 
 
 def check_tables(settings: Settings) -> CheckResult:
-    """Confere se cada CSV virou uma tabela com linhas no schema raw."""
-    expected = {table_name_from_file(f) for f in find_csv_files(settings.raw_data_dir)}
+    """Confere as tabelas da origem, inclusive tabelas válidas que estejam vazias."""
+    expected = {table_name_from_file(f) for f in find_data_files(settings.raw_data_dir)}
     with connect(settings.duckdb_path, read_only=True) as con:
         names = con.execute(
             "SELECT table_name FROM duckdb_tables() WHERE schema_name = ?", [RAW_SCHEMA]
         ).fetchall()
         found = {
-            name: scalar(con, f'SELECT count(*) FROM {RAW_SCHEMA}."{name}"') for (name,) in names
+            name: scalar(con, f"SELECT count(*) FROM {RAW_SCHEMA}.{quote_identifier(name)}")
+            for (name,) in names
         }
     missing = expected - found.keys()
-    empty = [name for name, size in found.items() if size == 0]
     summary = ", ".join(f"{name} ({size} linhas)" for name, size in sorted(found.items()))
     if missing:
         return CheckResult(False, "Tabelas raw", f"faltando: {', '.join(sorted(missing))}")
-    if empty:
-        return CheckResult(False, "Tabelas raw", f"vazias: {', '.join(empty)}")
     return CheckResult(bool(found), "Tabelas raw", summary or "nenhuma tabela")
 
 
@@ -109,9 +108,13 @@ def check_agent_connection(settings: Settings) -> CheckResult:
 
 
 def check_glossary_sync(settings: Settings) -> CheckResult:
-    """O glossário descreve exatamente as colunas que existem no banco."""
+    """Descrições são opcionais; referências a tabelas/colunas inexistentes são erros."""
+    if settings.glossary_path is None:
+        return CheckResult(True, "Glossário x banco", "opcional; contexto pelo catálogo automático")
     with connect(settings.duckdb_path, read_only=True) as con:
-        problems = check_glossary(load_glossary(settings.glossary_path), con)
+        problems = check_glossary(
+            load_glossary(settings.glossary_path), con, require_complete=False
+        )
     return CheckResult(not problems, "Glossário x banco", "; ".join(problems) or "em sincronia")
 
 

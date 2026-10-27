@@ -26,7 +26,9 @@ docker compose exec -T app python deploy/smoke.py
 O Compose lê esses valores também do `.env`. Ele mantém somente a porta local de entrada;
 a configuração não publica o app na internet. A infraestrutura base foi validada na
 [execução de CI 40365502597](https://github.com/joaovitor2410/AnalisIA/actions/runs/40365502597).
-A ampliação da CI para o modo demo será executada depois do próximo push autorizado.
+A matriz pessoal/demo passou na
+[execução 40502502772](https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772).
+Alterações posteriores de importação da F9A ainda precisam de nova CI.
 
 ## O que fica disponível
 
@@ -64,6 +66,8 @@ pode ser perdido ao abrir uma nova sessão ou reiniciar o app. A demo não ofere
 sincronização de dispositivos ou persistência do dashboard entre visitas.
 
 No modo pessoal, os arquivos e a aprovação humana continuam funcionando como antes.
+Na F9A, o modo pessoal permite importar e selecionar CSV/Parquet; a demo continua sem upload
+e sem seleção de bases particulares. `OLHEIRO_DATASET` não pode ser combinado com o modo demo.
 `OLHEIRO_DEMO_MODE` controla a interface Streamlit; CLI e MCP locais têm seus fluxos próprios.
 
 ## Modelo e limites

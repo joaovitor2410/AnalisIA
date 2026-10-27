@@ -14,8 +14,9 @@ from streamlit.testing.v1 import AppTest
 from olheiro.agent import AnalysisAnswer, build_report
 from olheiro.cache import AnswerCache
 from olheiro.charts import ChartSpec
-from olheiro.config import PROJECT_ROOT
+from olheiro.config import PROJECT_ROOT, get_settings
 from olheiro.dashboard import DashboardItem
+from olheiro.datasets import cache_revision, dataset_identity
 from olheiro.db import WorkspaceInUseError, connect, load_raw_dir
 from olheiro.ui import resources
 
@@ -54,7 +55,9 @@ def cache_answer(tmp_path: Path) -> None:
     )
     with connect(tmp_path / "olheiro.duckdb", read_only=True) as con:
         report = build_report(output, con, "gemini-teste", RunUsage(), [])
-    AnswerCache(tmp_path / "answer_cache.json").store(CACHED_QUESTION, report)
+    AnswerCache(tmp_path / "answer_cache.json", cache_revision(get_settings())).store(
+        CACHED_QUESTION, report
+    )
 
 
 def page_app(page: Callable[[], None]) -> AppTest:
@@ -194,6 +197,7 @@ def saved_tables() -> list[str]:
 def test_dashboard_redraws_pinned_items_from_sql(app_env: Path) -> None:
     store = resources.DashboardStore(app_env / "dashboard.json")
     with store.file.update() as dashboard:
+        dashboard.namespace = dataset_identity(get_settings())
         dashboard.items = [
             DashboardItem(
                 title="Mais títulos",

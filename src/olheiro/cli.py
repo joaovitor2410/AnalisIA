@@ -29,6 +29,7 @@ from olheiro.agent import (
 from olheiro.cache import AnswerCache, ask_with_cache
 from olheiro.charts import build_figure, save_figure
 from olheiro.config import get_settings
+from olheiro.datasets import cache_revision
 from olheiro.db import WORKSPACE_CATALOG, WorkspaceInUseError, connect_agent
 from olheiro.errors import explain_model_failure
 from olheiro.semantic import load_glossary
@@ -111,7 +112,7 @@ def main(argv: list[str] | None = None) -> None:
                 if args.no_cache:
                     outcome = run.finish(ask(args.question, deps, model))
                 else:
-                    cache = AnswerCache(settings.answer_cache_path)
+                    cache = AnswerCache(settings.answer_cache_path, cache_revision(settings))
                     outcome = run.finish(ask_with_cache(args.question, deps, cache, model))
             while isinstance(outcome, PendingApproval):
                 approved = confirm_save(outcome, con)  # o tempo de decisão não entra na medida

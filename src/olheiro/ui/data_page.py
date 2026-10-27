@@ -1,10 +1,15 @@
 """Página Dados: o que o agente enxerga (tabelas, glossário, regras), sem chamar o modelo."""
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import duckdb
 import pandas as pd
 import streamlit as st
 
-from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG, scalar
+from olheiro.config import Settings
+from olheiro.datasets import import_dataset
+from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG, quote_identifier, scalar
 from olheiro.semantic import Glossary, column_doc, columns_by_table
 from olheiro.tools import column_profile, query_rows
 from olheiro.ui.components import show_table
@@ -23,13 +28,24 @@ def data_page() -> None:
         "O que o agente enxerga: as tabelas, o significado de cada coluna (glossário) e as "
         "regras de negócio que ele recebe nas instruções."
     )
+    st.caption(f"Base ativa: {resources.settings.dataset_title}")
+    if not resources.settings.olheiro_demo_mode:
+        show_import(resources.settings)
+    if not glossary.tables:
+        st.info(
+            "Catálogo automático: nomes e tipos foram detectados. Descrições e regras de "
+            "negócio ainda não foram informadas; o agente não deve supor unidades ou relações."
+        )
     tables = columns_by_table(con, "schema_name", RAW_SCHEMA)
     tabs = st.tabs([f"{RAW_SCHEMA}.{name}" for name in tables] + ["Regras de negócio", "Workspace"])
     for tab, (table, columns) in zip(tabs, tables.items(), strict=False):
         with tab:
             show_table_overview(con, glossary, table, columns)
     with tabs[-2]:
-        st.markdown("\n".join(f"- {rule}" for rule in glossary.rules))
+        if glossary.rules:
+            st.markdown("\n".join(f"- {rule}" for rule in glossary.rules))
+        else:
+            st.info("Nenhuma regra de negócio informada para esta base.")
     with tabs[-1]:
         show_workspace(con)
 
@@ -40,7 +56,8 @@ def show_table_overview(
     doc = glossary.tables.get(table)
     if doc is not None:
         st.markdown(doc.description)
-    rows = scalar(con, f'SELECT count(*) FROM {RAW_SCHEMA}."{table}"')
+    source = f"{RAW_SCHEMA}.{quote_identifier(table)}"
+    rows = scalar(con, f"SELECT count(*) FROM {source}")
     st.caption(f"{rows} linhas · {len(columns)} colunas")
     st.dataframe(
         pd.DataFrame(
@@ -51,7 +68,7 @@ def show_table_overview(
     )
 
     st.subheader("Prévia")
-    show_table(query_rows(con, f'SELECT * FROM {RAW_SCHEMA}."{table}"', max_rows=PREVIEW_ROWS))
+    show_table(query_rows(con, f"SELECT * FROM {source}", max_rows=PREVIEW_ROWS))
 
     st.subheader("Perfil de uma coluna")
     column = st.selectbox("Coluna", [name for name, _ in columns], key=f"profile-{table}")
@@ -72,6 +89,49 @@ def show_workspace(con: duckdb.DuckDBPyConnection) -> None:
         with st.expander(f"{WORKSPACE_CATALOG}.{table}"):
             show_table(
                 query_rows(
-                    con, f'SELECT * FROM {WORKSPACE_CATALOG}."{table}"', max_rows=PREVIEW_ROWS
+                    con,
+                    f"SELECT * FROM {WORKSPACE_CATALOG}.{quote_identifier(table)}",
+                    max_rows=PREVIEW_ROWS,
                 )
             )
+
+
+def show_import(settings: Settings) -> None:
+    """Importa uma base pessoal independente; nenhuma ferramenta do agente chama este fluxo."""
+    with st.expander("Importar outra base (CSV ou Parquet)"):
+        st.caption(
+            "Envie um ou mais arquivos. Cada arquivo vira uma tabela; as bases ficam "
+            "disponíveis na barra lateral. Dados, cache e dashboard são separados."
+        )
+        with st.form("import-dataset"):
+            title = st.text_input("Nome da base", placeholder="Vendas da loja")
+            name = st.text_input("Identificador único", placeholder="vendas_loja")
+            uploads = st.file_uploader(
+                "Arquivos CSV ou Parquet",
+                type=["csv", "parquet"],
+                accept_multiple_files=True,
+                max_upload_size=settings.olheiro_import_max_mb,
+            )
+            st.caption(f"Até {settings.olheiro_import_max_mb} MB no total por importação.")
+            submitted = st.form_submit_button("Importar base")
+        if not submitted:
+            return
+        try:
+            if not uploads:
+                raise ValueError("Selecione ao menos um arquivo CSV ou Parquet.")
+            if sum(upload.size for upload in uploads) > settings.olheiro_import_max_mb * 1024**2:
+                raise ValueError("Os arquivos ultrapassam o limite total de importação.")
+            with TemporaryDirectory(prefix="olheiro-upload-") as folder:
+                files: list[Path] = []
+                for upload in uploads:
+                    path = Path(folder) / Path(upload.name).name
+                    if path.exists():
+                        raise ValueError(f"Nome de arquivo repetido: {path.name}")
+                    path.write_bytes(upload.getvalue())
+                    files.append(path)
+                manifest = import_dataset(files, settings.datasets_dir, name, title)
+        except (ValueError, OSError, duckdb.Error) as error:
+            st.error(f"Não foi possível importar: {error}")
+            return
+        st.session_state.next_dataset = str(manifest)
+        st.rerun()

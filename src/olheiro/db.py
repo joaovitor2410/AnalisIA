@@ -1,8 +1,8 @@
-"""Acesso ao DuckDB: carga dos CSVs brutos e a conexão blindada do agente.
+"""Acesso ao DuckDB: carga dos arquivos tabulares e conexão blindada do agente.
 
 Organização:
-- data/olheiro.duckdb, schema "raw": uma tabela por CSV de data/raw/. O agente só lê.
-- data/workspace.duckdb, anexado como "workspace": único lugar onde o agente grava
+- Banco configurado, schema "raw": uma tabela por CSV/Parquet importado. O agente só lê.
+- Workspace separado, anexado como "workspace": único lugar onde o agente grava
   (via save_result, com confirmação do usuário).
 """
 
@@ -20,6 +20,7 @@ from olheiro.config import get_settings
 RAW_SCHEMA = "raw"
 # Nome com que o banco de trabalho é anexado: tabelas salvas viram workspace.<nome>.
 WORKSPACE_CATALOG = "workspace"
+DATA_READERS = {".csv": "read_csv", ".parquet": "read_parquet"}
 # Nome com que o banco principal é anexado na conexão do agente.
 LAKE_CATALOG = "lake"
 
@@ -69,6 +70,16 @@ def scalar(con: duckdb.DuckDBPyConnection, sql: str, params: list[Any] | None = 
     return row[0]
 
 
+def quote_identifier(name: str) -> str:
+    """Escapa identificadores, inclusive colunas reais contendo aspas ou espaços."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+def quote_literal(value: str) -> str:
+    """Escapa caminhos para comandos como ATTACH, que não aceitam parâmetros."""
+    return "'" + value.replace("'", "''") + "'"
+
+
 def table_name_from_file(path: Path) -> str:
     """Gera um nome de tabela SQL seguro a partir do nome do arquivo.
 
@@ -98,11 +109,11 @@ def connect_agent(db_path: Path, workspace_path: Path | None) -> duckdb.DuckDBPy
         workspace_path.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(":memory:")
     try:
-        con.execute(f"ATTACH '{db_path}' AS {LAKE_CATALOG} (READ_ONLY)")
+        con.execute(f"ATTACH {quote_literal(str(db_path))} AS {LAKE_CATALOG} (READ_ONLY)")
         con.execute(f"USE {LAKE_CATALOG}")  # "raw.teams" resolve sem prefixar o catálogo
         try:
             workspace = str(workspace_path) if workspace_path is not None else ":memory:"
-            con.execute(f"ATTACH '{workspace}' AS {WORKSPACE_CATALOG}")
+            con.execute(f"ATTACH {quote_literal(workspace)} AS {WORKSPACE_CATALOG}")
         except duckdb.IOException as error:
             if workspace_path is not None and "Could not set lock on file" in str(error):
                 raise WorkspaceInUseError(workspace_path, str(error)) from error
@@ -131,24 +142,62 @@ def find_csv_files(raw_dir: Path) -> list[Path]:
     return sorted(raw_dir.glob("*.csv"))
 
 
+def find_data_files(source: Path) -> list[Path]:
+    """Arquivo ou pasta local de CSV/Parquet, sem busca recursiva nem URLs."""
+    if source.is_file():
+        return [source] if source.suffix.lower() in DATA_READERS else []
+    if not source.is_dir():
+        return []
+    return sorted(p for p in source.iterdir() if p.is_file() and p.suffix.lower() in DATA_READERS)
+
+
+def validate_data_files(files: list[Path]) -> None:
+    """Recusa entradas vazias, formatos inválidos e colisões antes de alterar o banco."""
+    if not files:
+        raise ValueError("Nenhum CSV ou Parquet encontrado na origem informada.")
+    names: dict[str, Path] = {}
+    for path in files:
+        if not path.is_file() or path.suffix.lower() not in DATA_READERS:
+            raise ValueError(f"Arquivo inexistente ou formato não suportado: {path.name}")
+        name = table_name_from_file(path)
+        if name in names:
+            raise ValueError(
+                f"Nomes de tabela em conflito: {names[name].name} e {path.name} → {name}"
+            )
+        names[name] = path
+
+
 def load_csv(con: duckdb.DuckDBPyConnection, csv_path: Path) -> LoadedTable:
     """Cria raw.<nome> a partir de um CSV, deixando o DuckDB detectar
     separador, cabeçalho e tipos das colunas."""
-    name = table_name_from_file(csv_path)
+    return load_data_file(con, csv_path)
+
+
+def load_data_file(con: duckdb.DuckDBPyConnection, path: Path) -> LoadedTable:
+    """Materializa um arquivo: o agente consulta a tabela sem acesso externo ao arquivo."""
+    name = table_name_from_file(path)
+    reader = DATA_READERS[path.suffix.lower()]
+    options = ", sample_size=-1" if reader == "read_csv" else ""
     con.execute(
-        f'CREATE TABLE {RAW_SCHEMA}."{name}" AS SELECT * FROM read_csv(?)',
-        [str(csv_path)],
+        f'CREATE TABLE {RAW_SCHEMA}."{name}" AS SELECT * FROM {reader}(?{options})',
+        [str(path)],
     )
     row_count = scalar(con, f'SELECT count(*) FROM {RAW_SCHEMA}."{name}"')
     column_count = len(con.execute(f'DESCRIBE {RAW_SCHEMA}."{name}"').fetchall())
-    return LoadedTable(name, csv_path, row_count, column_count)
+    return LoadedTable(name, path, row_count, column_count)
 
 
 def load_raw_dir(con: duckdb.DuckDBPyConnection, raw_dir: Path) -> list[LoadedTable]:
-    """Recria o schema raw do zero com todos os CSVs da pasta.
+    """Recria raw com CSV/Parquet da pasta; falhas preservam a carga anterior."""
+    return load_files(con, find_data_files(raw_dir))
+
+
+def load_files(con: duckdb.DuckDBPyConnection, files: list[Path]) -> list[LoadedTable]:
+    """Recria o schema raw do zero com os arquivos validados.
 
     Tudo roda numa transação: se um CSV falhar, o banco continua como estava.
     """
+    validate_data_files(files)
     con.execute("BEGIN TRANSACTION")
     try:
         con.execute(f"DROP SCHEMA IF EXISTS {RAW_SCHEMA} CASCADE")
@@ -156,7 +205,7 @@ def load_raw_dir(con: duckdb.DuckDBPyConnection, raw_dir: Path) -> list[LoadedTa
         # Até a Fase 2 havia um schema "workspace" vazio aqui; ele colidiria com o catálogo
         # "workspace" anexado na conexão do agente (referência ambígua).
         con.execute(f"DROP SCHEMA IF EXISTS {WORKSPACE_CATALOG} CASCADE")
-        loaded = [load_csv(con, path) for path in find_csv_files(raw_dir)]
+        loaded = [load_data_file(con, path) for path in files]
         con.execute("COMMIT")
     except Exception:
         con.execute("ROLLBACK")
@@ -165,10 +214,10 @@ def load_raw_dir(con: duckdb.DuckDBPyConnection, raw_dir: Path) -> list[LoadedTa
 
 
 def main() -> None:
-    """Comando `olheiro-load`: carrega data/raw/*.csv no DuckDB."""
+    """Comando `olheiro-load`: carrega CSV/Parquet da base configurada no DuckDB."""
     settings = get_settings()
-    if not find_csv_files(settings.raw_data_dir):
-        sys.exit(f"Nenhum CSV encontrado em {settings.raw_data_dir}. Coloque os arquivos lá.")
+    if not find_data_files(settings.raw_data_dir):
+        sys.exit(f"Nenhum CSV ou Parquet em {settings.raw_data_dir}. Coloque os arquivos lá.")
 
     with connect(settings.duckdb_path) as con:
         loaded = load_raw_dir(con, settings.raw_data_dir)
