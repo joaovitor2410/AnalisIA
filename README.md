@@ -1,4 +1,4 @@
-# Olheiro
+# AnalisIA
 
 Agente de IA que transforma perguntas em português em análises verificáveis: **resposta +
 SQL + tabela + visualização**. O Brasileirão Série A 2003–2024 demonstra o fluxo completo,
@@ -7,6 +7,11 @@ incluindo recusas quando os dados não permitem responder.
 Projeto de portfólio de João Victor, construído em fases para estudar agentes, Dados e BI.
 O núcleo pode ser usado pelo navegador, terminal ou protocolo MCP. **Importe suas bases CSV
 e Parquet**, selecione a base ativa e analise outros domínios com o mesmo agente.
+
+A interface da **AnalisIA** reúne sugestões editáveis de perguntas, evidências exportáveis,
+dashboard com busca e filtros e exploração visual das colunas. Identifique a base ativa e
+confira tabela, SQL e consumo em cada análise. O pacote e as integrações `olheiro-*` preservam
+seus nomes técnicos; `uv run analisia` é a entrada principal do navegador.
 
 ## Capacidades
 
@@ -33,7 +38,7 @@ cd AnalisIA
 uv sync --locked
 cp -n .env.example .env
 # Preencha GOOGLE_API_KEY no .env para fazer perguntas ao Gemini.
-uv run olheiro-app
+uv run analisia
 ```
 
 Abra o endereço exibido no terminal, normalmente **http://localhost:8501**. O comando carrega
@@ -42,7 +47,7 @@ interface, o explorador, o dashboard e respostas já guardadas continuam dispon�
 
 | Quero usar… | Comando | Comportamento |
 |---|---|---|
-| Interface no navegador | `uv run olheiro-app` | Inicia o Streamlit e mostra o endereço |
+| Interface no navegador | `uv run analisia` | Inicia o Streamlit e mostra o endereço |
 | Pergunta no terminal | `uv run olheiro-ask --verbose "Qual região tem mais títulos?"` | Mostra resposta e evidências |
 | Integração MCP | `uv run olheiro-mcp` | Aguarda um cliente por stdin/stdout, sem abrir janela |
 | Testar MCP sem Gemini | `uv run python examples/mcp_client.py` | Inicia um cliente e consulta temporadas |

@@ -1,1 +1,1 @@
-"""Olheiro: agente de IA analista de dados."""
+"""AnalisIA: agente de IA analista de dados."""

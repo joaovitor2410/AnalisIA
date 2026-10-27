@@ -104,7 +104,16 @@ def load_resources() -> AppResources:
         old_deps = st.session_state.pop("deps", None)
         if old_deps is not None:
             old_deps.con.close()
-        for key in ("history", "pending", "queued_question", "example", "demo_resources"):
+        for key in (
+            "history",
+            "pending",
+            "queued_question",
+            "question_draft",
+            "example",
+            "demo_resources",
+            "dashboard-search",
+            "dashboard-kind",
+        ):
             st.session_state.pop(key, None)
         st.session_state.resource_connection = shared.con
     if not shared.settings.olheiro_demo_mode:

@@ -60,11 +60,29 @@ def build_figure(spec: ChartSpec, evidence: QueryResult) -> go.Figure:
     if spec.x is None:  # check_chart já recusa; aqui protege quem chamar sem validar
         raise ChartError(f"Gráfico '{spec.kind}' precisa da coluna x.")
     x, y = evidence.column_values(spec.x), evidence.column_values(spec.y)
-    trace = go.Bar(x=x, y=y) if spec.kind == "bar" else go.Scatter(x=x, y=y, mode="lines+markers")
+    trace = (
+        go.Bar(x=x, y=y, marker_color="#6558E8", marker_cornerradius=5)
+        if spec.kind == "bar"
+        else go.Scatter(
+            x=x,
+            y=y,
+            mode="lines+markers",
+            line={"color": "#6558E8", "width": 3},
+            marker={"size": 7},
+        )
+    )
     figure = go.Figure(trace)
     figure.update_layout(
         title=spec.title, xaxis_title=spec.x, yaxis_title=spec.y, template="plotly_white"
     )
+    figure.update_layout(
+        font={"family": "Arial, sans-serif", "color": "#526079"},
+        title_font={"color": "#18243B", "size": 19},
+        margin={"t": 65, "b": 45, "l": 20, "r": 20},
+        hoverlabel={"bgcolor": "#111C30", "font_color": "#FFFFFF"},
+    )
+    figure.update_xaxes(showgrid=False, zeroline=False)
+    figure.update_yaxes(gridcolor="#EDF0F7", zeroline=False)
     return figure
 
 

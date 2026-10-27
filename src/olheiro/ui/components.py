@@ -58,6 +58,8 @@ def usage_caption(report: AgentReport) -> str:
 def show_report(report: AgentReport, key: str) -> None:
     """Resposta, insights, visualização e as abas de evidência (tabela, SQL, passos)."""
     output = report.output
+    if output.answerable and report.evidence is not None:
+        st.caption("ANÁLISE COM EVIDÊNCIA · confira os dados e o SQL abaixo")
     if not output.answerable:
         st.warning(output.answer, icon=":material/block:")
     else:
@@ -71,6 +73,16 @@ def show_report(report: AgentReport, key: str) -> None:
         table_tab, sql_tab, steps_tab = st.tabs(["Tabela", "SQL", "Passos do agente"])
         with table_tab:
             show_table(report.evidence)
+            st.download_button(
+                "Baixar evidência em CSV",
+                to_dataframe(report.evidence).to_csv(index=False).encode("utf-8-sig"),
+                file_name="analisia-evidencia.csv",
+                mime="text/csv",
+                key=f"{key}-csv",
+                icon=":material/download:",
+                on_click="ignore",
+                help="Baixa as linhas exibidas. Se houver corte, ele é indicado na tabela.",
+            )
         with sql_tab:
             st.code(output.sql, language="sql")
         with steps_tab:

@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> None:
             ):
                 pass
         except (OSError, ValueError, duckdb.Error, WorkspaceInUseError) as error:
-            sys.exit(f"Não foi possível iniciar o Olheiro: {error}")
+            sys.exit(f"Não foi possível iniciar a AnalisIA: {error}")
     # Substitui o processo: sinais de parada chegam ao servidor, inclusive no Docker.
     app_path = Path(__file__).with_name("app.py")
     os.execv(sys.executable, [sys.executable, "-m", "streamlit", "run", str(app_path), *args])

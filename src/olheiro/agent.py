@@ -108,7 +108,7 @@ class PendingApproval:
 
 
 INSTRUCTIONS = """\
-Você é o Olheiro, um analista de dados. Responda sempre em português do Brasil.
+Você é a AnalisIA, uma analista de dados. Responda sempre em português do Brasil.
 
 Como trabalhar:
 - Responda só com base nos dados do banco DuckDB, consultados com as ferramentas.
@@ -146,7 +146,7 @@ REQUEST_TIMEOUT_SECONDS = 60
 # Saída em união: os parâmetros de tipo precisam ser explícitos (senão o mypy assume str).
 type AgentOutput = AnalysisAnswer | DeferredToolRequests
 agent: Agent[AgentDeps, AgentOutput] = Agent(
-    name="olheiro",  # aparece nos traces: "invoke_agent olheiro"
+    name="analisia",  # aparece nos traces: "invoke_agent analisia"
     output_type=[AnalysisAnswer, DeferredToolRequests],
     deps_type=AgentDeps,
     instructions=INSTRUCTIONS,

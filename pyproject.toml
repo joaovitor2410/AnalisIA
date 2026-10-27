@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
+analisia = "olheiro.launcher:main"
 olheiro-load = "olheiro.db:main"
 olheiro-check = "olheiro.check_setup:main"
 olheiro-ask = "olheiro.cli:main"

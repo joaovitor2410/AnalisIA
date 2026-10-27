@@ -11,6 +11,7 @@ import streamlit as st
 from olheiro.config import Settings
 from olheiro.telemetry import RunRecord
 from olheiro.tracing import SpanView, read_trace
+from olheiro.ui.presentation import page_intro
 from olheiro.ui.resources import load_resources
 
 SOURCES = {"app": "App", "cli": "Terminal", "mcp": "MCP", "eval": "Avaliação"}
@@ -28,10 +29,11 @@ def ops_page() -> None:
     if resources.settings.olheiro_demo_mode:
         st.info("A página Operação está disponível apenas no modo pessoal.")
         return
-    st.title("Operação")
-    st.caption(
+    page_intro(
+        "Transparência em cada análise",
+        "Operação",
         "Cada pergunta registra desfecho, latência, requisições, tokens e custo equivalente no "
-        "nível pago; o trace mostra o passo a passo. Nada nesta página chama o modelo."
+        "nível pago; o trace mostra o passo a passo. Nada nesta página chama o modelo.",
     )
     records = resources.runs.read()
     if not records:

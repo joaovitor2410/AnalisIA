@@ -1,7 +1,7 @@
-# CLAUDE.md: memória do projeto Olheiro
+# CLAUDE.md: memória do projeto AnalisIA (antes Olheiro)
 
 ## Resumo
-Olheiro é um agente de IA analista de dados. Recebe perguntas em português sobre dados tabulares,
+AnalisIA é um agente de IA analista de dados. Recebe perguntas em português sobre dados tabulares,
 decide quais ferramentas usar, escreve e executa SQL (DuckDB), gera gráficos e responde **com
 evidência** (SQL + tabela + gráfico + insight). Recusa com honestidade quando os dados não permitem
 responder. Dataset de demonstração: Campeonato Brasileiro 2003–2024 (`data/raw/brasileirao.csv`,
@@ -21,6 +21,8 @@ Em **2026-10-27**, o autor pediu uma varredura completa e autorizou mudanças pa
 outras bases. Escolheu **CSV e Parquet** como primeiras fontes. **F9A** prioriza esse núcleo
 flexível antes da publicação; a auditoria e o próximo roteiro estão em
 `docs/auditoria-2026-10-27.md`.
+Ainda em 27/10, o autor pediu uma renovação visual e definiu o nome **AnalisIA**. A F9A.1
+entrega identidade, navegação e interações; F9B continua reservada a qualidade/semântica.
 - Funções: chat analítico com evidência e passos do agente; dashboard (fixar respostas, KPIs);
   explorador de dados; perguntas prontas via cache; importação/seleção de bases pessoais
   CSV/Parquet (F9A). Upload do visitante da demo continua fora do escopo.
@@ -178,6 +180,8 @@ src/olheiro/dashboard.py    itens fixados (SQL + ChartSpec) e render_item
 src/olheiro/storage.py      JsonFile: modelo Pydantic em JSON com lock e escrita atômica
 src/olheiro/app.py          entrada do Streamlit (navegação + barra lateral)
 src/olheiro/ui/             páginas Perguntar, Dashboard, Dados, Operação + recursos e componentes
+src/olheiro/ui/presentation.py identidade visual, SVG e composição decorativa da AnalisIA
+.streamlit/config.toml      tema nativo (somente esse arquivo da pasta entra no Docker)
 src/olheiro/errors.py       explica falhas do modelo (cota, 503, prazo) em português
 src/olheiro/evaluation.py   evals: tarefa, avaliadores, resumo (comando olheiro-eval)
 src/olheiro/pricing.py      preço por modelo e custo equivalente
@@ -195,6 +199,7 @@ deploy/                    Dockerfile/config Squid e smoke do runtime sem Gemini
 docs/deployment.md          operação, validação e limites da entrega F8A
 docs/demo.md                modo demo, isolamento de sessões, limites e privacidade
 docs/datasets.md            upload/importação, semântica opcional e estado por base (F9A)
+docs/interface.md           identidade AnalisIA e fluxos interativos (F9A.1)
 docs/auditoria-2026-10-27.md  achados, etapas concluídas e roteiro priorizado
 examples/datasets/retail/   pedidos/clientes sintéticos e glossário parcial de demonstração
 data/raw/SOURCE.md          fonte Kaggle, condições informadas e hashes dos CSVs
@@ -313,6 +318,23 @@ data/exports/               exportações do agente (ignorado no Git)
   `uv run mypy`, `uv build`. Importação reproduzível em `docs/datasets.md`.
   **Próxima fase sugerida: F9B, qualidade e semântica dos dados** (prévia/tipos, duplicidades,
   chaves/relacionamentos e editor de regras). Não iniciar sem o ok do autor ao fim da F9A.
+
+- [x] **Fase 9A.1: AnalisIA — identidade e experiência (27/10/2026).** Pedido explícito do autor.
+  Nome público AnalisIA no app, agente e MCP; comando `uv run analisia` para abrir o navegador.
+  Pacote/caminhos/comandos `olheiro-*` e URI MCP preservados para as integrações existentes.
+  Tema nativo claro com navegação escura, violeta/verde, logo SVG e composição responsiva.
+  Perguntas sugeridas viram rascunhos editáveis, sem requisição até envio explícito; Nova
+  exploração preserva quota e dashboard. Busca/filtro no painel, prévia de dados ajustável,
+  métricas do perfil, CSV da evidência e gráficos com identidade consistente. Aprovações e
+  modo demo preservados; exemplos também ficam desabilitados enquanto há pedido de gravação.
+  Textos dinâmicos escapados no HTML decorativo, sem JS; controles continuam nativos.
+  **198 testes offline**, também em cópia limpa sem `.env`; lint/format/mypy e build;
+  revisão no Chrome em desktop e 390 px,
+  sem chamadas ao Gemini. Tema incluído no Docker por arquivo explícito, sem secrets.toml.
+  Documentação em `docs/interface.md`. CI Docker da versão nova após push autorizado.
+  Rodar: `uv sync --locked && uv run analisia`; testar: `uv run pytest -q`,
+  `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`, `uv build`.
+  Próxima etapa funcional sugerida continua **F9B: qualidade e semântica dos dados**.
 
 ## Pendências / em aberto
 - **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB

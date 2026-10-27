@@ -1,5 +1,6 @@
 # Segredos
 .env
+.streamlit/secrets.toml
 
 # Ambiente e caches do Python
 .venv/

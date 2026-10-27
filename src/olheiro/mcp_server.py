@@ -1,4 +1,4 @@
-"""Servidor MCP local: o mesmo núcleo do Olheiro, acessível por qualquer cliente MCP.
+"""Servidor MCP local: o mesmo núcleo da AnalisIA, acessível por qualquer cliente MCP.
 
 Dois caminhos: o cliente escreve SQL (sem LLM no servidor), ou delega a pergunta ao agente
 completo (cache + Gemini + observabilidade). Só leitura: não há ferramenta de gravação nem
@@ -101,7 +101,7 @@ def analyze(question: str, state: ServerState, use_cache: bool) -> AnalysisResul
                 outcome = ask(question, deps, build_model(state.settings))
                 if isinstance(outcome, PendingApproval):
                     raise ToolError(
-                        "O MCP do Olheiro permite apenas leitura. Nenhuma tabela foi gravada. "
+                        "O MCP da AnalisIA permite apenas leitura. Nenhuma tabela foi gravada. "
                         "Para salvar com aprovação humana, use o app ou olheiro-ask."
                     )
                 if use_cache and outcome.output.answerable:
@@ -138,7 +138,7 @@ def create_server(settings: Settings | None = None) -> MCPServer[ServerState]:
             con.close()
 
     server = MCPServer(
-        "Olheiro",
+        "AnalisIA",
         instructions=(
             "Analista de dados tabulares. Leia olheiro://context para conhecer tabelas, "
             "valores e regras. run_sql e profile_column não chamam o Gemini; ask_question "
@@ -188,7 +188,7 @@ def create_server(settings: Settings | None = None) -> MCPServer[ServerState]:
         ctx: Context[ServerState],
         use_cache: bool = True,
     ) -> AnalysisResult:
-        """Pergunta ao agente Olheiro em português: resposta, SQL, tabela, ChartSpec e consumo.
+        """Pergunta à AnalisIA em português: resposta, SQL, tabela, ChartSpec e consumo.
 
         Pode chamar o Gemini e consumir cota; cache reexecuta o SQL sem LLM. Perguntas são
         independentes, sem memória de conversa. Pedidos de gravação são recusados no MCP.

@@ -1,4 +1,4 @@
-"""Olheiro no navegador.
+"""AnalisIA no navegador.
 
 Rodar:
     uv run streamlit run src/olheiro/app.py
@@ -13,11 +13,13 @@ from olheiro.ui.ask_page import ask_page
 from olheiro.ui.dashboard_page import dashboard_page
 from olheiro.ui.data_page import data_page
 from olheiro.ui.ops_page import ops_page
+from olheiro.ui.presentation import apply_identity, connection_status
 from olheiro.ui.resources import load_resources
 
 
 def show_sidebar() -> None:
     settings = get_settings()
+    st.caption("SEU ESPAÇO DE ANÁLISE")
     if not settings.olheiro_demo_mode:
         datasets = discover_datasets(settings.datasets_dir)
         if settings.olheiro_dataset:
@@ -33,31 +35,38 @@ def show_sidebar() -> None:
             options,
             key="selected_dataset",
             format_func=lambda value: labels.get(value, settings.dataset_title),
+            help="Escolha uma base. Importe novos arquivos na página Dados.",
         )
     resources = load_resources()
-    st.markdown("### Olheiro")
-    st.caption(
-        "Analista de dados com IA: pergunte em português e receba a resposta com o SQL, "
-        "a tabela e o gráfico que a sustentam."
-    )
     st.caption(f"Base ativa: {resources.settings.dataset_title}")
     demo = resources.settings.olheiro_demo_mode
     if demo:
         st.caption("Modo demonstração · seu dashboard pertence a esta sessão")
     if demo and not resources.settings.olheiro_demo_model_enabled:
+        connection_status("Exemplos prontos para explorar", configured=True)
         st.info("Escolha uma pergunta pronta para explorar os dados.")
     elif resources.model is None:
-        st.warning(f"Modelo indisponível: {resources.model_error}", icon=":material/warning:")
+        connection_status("IA não configurada", configured=False)
+        with st.expander("Configurar o modelo"):
+            st.warning(f"Modelo indisponível: {resources.model_error}", icon=":material/warning:")
+            st.caption("A exploração de dados e o dashboard continuam disponíveis.")
     else:
-        st.caption(f"Modelo: {resources.settings.olheiro_model}")
+        connection_status("IA configurada", configured=True)
+        with st.expander("Detalhes do ambiente"):
+            st.caption(f"Modelo: {resources.settings.olheiro_model}")
+            st.caption("As perguntas são processadas pelo provedor de IA configurado.")
     limit = resources.settings.session_question_limit
     if limit is not None and (not demo or resources.settings.olheiro_demo_model_enabled):
         used = st.session_state.get("model_questions", 0)
         progress = min(used / limit, 1.0) if limit else 1.0
         st.progress(progress, text=f"Perguntas livres: {used} de {limit}")
+    st.divider()
+    st.caption("Pergunte. Confira a evidência. Transforme em descoberta.")
+    st.caption("AnalisIA · Inteligência com clareza")
 
 
-st.set_page_config(page_title="Olheiro", page_icon=":material/query_stats:", layout="wide")
+st.set_page_config(page_title="AnalisIA", page_icon="✦", layout="wide")
+apply_identity()
 try:
     with st.sidebar:
         show_sidebar()

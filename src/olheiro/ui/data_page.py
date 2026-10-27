@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 
 import duckdb
 import pandas as pd
@@ -13,6 +14,7 @@ from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG, quote_identifier, scalar
 from olheiro.semantic import Glossary, column_doc, columns_by_table
 from olheiro.tools import column_profile, query_rows
 from olheiro.ui.components import show_table
+from olheiro.ui.presentation import context_strip, page_intro
 from olheiro.ui.resources import load_resources, session_deps
 
 PREVIEW_ROWS = 20
@@ -23,12 +25,13 @@ def data_page() -> None:
     con = session_deps(resources).con
     glossary = resources.glossary
 
-    st.title("Dados")
-    st.caption(
-        "O que o agente enxerga: as tabelas, o significado de cada coluna (glossário) e as "
-        "regras de negócio que ele recebe nas instruções."
+    page_intro(
+        "Conheça o ponto de partida",
+        "Dados",
+        "Explore tabelas, entenda as colunas e conheça as regras que orientam cada análise.",
     )
-    st.caption(f"Base ativa: {resources.settings.dataset_title}")
+    tables = columns_by_table(con, "schema_name", RAW_SCHEMA)
+    context_strip(resources.settings.dataset_title, len(tables), sum(map(len, tables.values())))
     if not resources.settings.olheiro_demo_mode:
         show_import(resources.settings)
     if not glossary.tables:
@@ -36,7 +39,6 @@ def data_page() -> None:
             "Catálogo automático: nomes e tipos foram detectados. Descrições e regras de "
             "negócio ainda não foram informadas; o agente não deve supor unidades ou relações."
         )
-    tables = columns_by_table(con, "schema_name", RAW_SCHEMA)
     tabs = st.tabs([f"{RAW_SCHEMA}.{name}" for name in tables] + ["Regras de negócio", "Workspace"])
     for tab, (table, columns) in zip(tabs, tables.items(), strict=False):
         with tab:
@@ -59,22 +61,36 @@ def show_table_overview(
     source = f"{RAW_SCHEMA}.{quote_identifier(table)}"
     rows = scalar(con, f"SELECT count(*) FROM {source}")
     st.caption(f"{rows} linhas · {len(columns)} colunas")
-    st.dataframe(
-        pd.DataFrame(
-            [(name, kind, column_doc(glossary, table, name).description) for name, kind in columns],
-            columns=["coluna", "tipo", "significado"],
-        ),
-        hide_index=True,
-    )
+    with st.expander("Dicionário de colunas"):
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    (name, kind, column_doc(glossary, table, name).description)
+                    for name, kind in columns
+                ],
+                columns=["coluna", "tipo", "significado"],
+            ),
+            hide_index=True,
+        )
 
     st.subheader("Prévia")
-    show_table(query_rows(con, f"SELECT * FROM {source}", max_rows=PREVIEW_ROWS))
+    preview_rows = st.select_slider(
+        "Linhas na prévia", [10, 20, 30, 50], value=PREVIEW_ROWS, key=f"preview-{table}"
+    )
+    show_table(query_rows(con, f"SELECT * FROM {source}", max_rows=preview_rows))
 
     st.subheader("Perfil de uma coluna")
     column = st.selectbox("Coluna", [name for name, _ in columns], key=f"profile-{table}")
     profile = column_profile(con, table, column)
     st.caption(f"Tipo: {profile.data_type}")
-    show_table(profile.stats)
+    stats = dict(zip(profile.stats.columns, profile.stats.rows[0], strict=True))
+    total, non_null = cast(int, stats["total_rows"]), cast(int, stats["non_null"])
+    metrics = st.columns(3)
+    metrics[0].metric("Registros", total, border=True)
+    metrics[1].metric("Valores ausentes", total - non_null, border=True)
+    metrics[2].metric("Valores distintos", cast(int, stats["distinct_values"]), border=True)
+    with st.expander("Estatísticas completas · mínimo e máximo"):
+        show_table(profile.stats)
     st.markdown("**Valores por frequência**")
     show_table(profile.top_values)
 
@@ -99,6 +115,7 @@ def show_workspace(con: duckdb.DuckDBPyConnection) -> None:
 def show_import(settings: Settings) -> None:
     """Importa uma base pessoal independente; nenhuma ferramenta do agente chama este fluxo."""
     with st.expander("Importar outra base (CSV ou Parquet)"):
+        st.subheader("Novos dados, novas possibilidades")
         st.caption(
             "Envie um ou mais arquivos. Cada arquivo vira uma tabela; as bases ficam "
             "disponíveis na barra lateral. Dados, cache e dashboard são separados."
@@ -113,7 +130,9 @@ def show_import(settings: Settings) -> None:
                 max_upload_size=settings.olheiro_import_max_mb,
             )
             st.caption(f"Até {settings.olheiro_import_max_mb} MB no total por importação.")
-            submitted = st.form_submit_button("Importar base")
+            submitted = st.form_submit_button(
+                "Importar base", type="primary", icon=":material/upload_file:"
+            )
         if not submitted:
             return
         try:

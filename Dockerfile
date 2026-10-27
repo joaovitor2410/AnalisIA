@@ -9,6 +9,7 @@ COPY pyproject.toml uv.lock .python-version README.md LICENSE ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project
 COPY src/ src/
+COPY .streamlit/config.toml .streamlit/config.toml
 COPY semantic/ semantic/
 COPY demo/ demo/
 COPY data/raw/ data/raw/

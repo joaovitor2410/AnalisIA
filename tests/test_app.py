@@ -218,3 +218,101 @@ def test_dashboard_redraws_pinned_items_from_sql(app_env: Path) -> None:
 def test_empty_dashboard_explains_how_to_pin(app_env: Path) -> None:
     app = page_app(run_dashboard_page).run()
     assert "Fixar no dashboard" in app.info[0].value
+
+
+def test_suggestion_is_editable_and_only_calls_model_after_explicit_send(
+    app_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    received: list[str] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        from pydantic_ai.messages import ModelRequest, UserPromptPart
+
+        received.extend(
+            str(part.content)
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, UserPromptPart)
+        )
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {"answerable": True, "answer": "Veja os dados.", "sql": TITLES_SQL},
+                )
+            ]
+        )
+
+    monkeypatch.setattr(resources, "build_model", lambda settings: FunctionModel(respond))
+    app = page_app(run_ask_page).run()
+    app.button(key="suggest-overview").click().run()
+    assert not app.exception and not received
+    assert app.session_state["model_questions"] == 0
+    assert "raw." in app.text_area(key="question_draft").value
+    question = "Quais os maiores campeões?"
+    app.text_area(key="question_draft").set_value(question).run()
+    assert not received
+    app.button(key="send-draft").click().run()
+    assert not app.exception
+    assert received == [question] and app.session_state["model_questions"] == 1
+    assert not app.session_state["question_draft"]
+    assert app.get("download_button")  # evidência pode ser exportada sem perguntar de novo
+
+
+def test_new_exploration_preserves_quota_and_pinned_analysis(
+    app_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_answer(app_env)
+    app = page_app(run_ask_page).run()
+    app.chat_input[0].set_value(CACHED_QUESTION).run()
+    app.button(key="pin-0").click().run()
+    app.session_state["model_questions"] = 3
+    app.button(key="new-exploration").click().run()
+    assert not app.exception and app.session_state["history"] == []
+    assert app.session_state["model_questions"] == 3
+    assert len(resources.load_resources().dashboard.read().items) == 1
+
+
+def test_dashboard_filters_without_changing_pinned_items(app_env: Path) -> None:
+    store = resources.DashboardStore(app_env / "dashboard.json", dataset_identity(get_settings()))
+    with connect(app_env / "olheiro.duckdb", read_only=True) as con:
+        for question, chart in [
+            ("Indicador de títulos", ChartSpec(kind="metric", y="titles", title="Títulos")),
+            ("Tabela de campeões", None),
+        ]:
+            report = build_report(
+                AnalysisAnswer(answerable=True, answer="Resultado", sql=TITLES_SQL, chart=chart),
+                con,
+                "teste",
+                RunUsage(),
+                [],
+            )
+            store.pin(question, report)
+    app = page_app(run_dashboard_page).run()
+    app.segmented_control(key="dashboard-kind").set_value("Tabelas").run()
+    assert not app.exception and not app.metric
+    assert len(app.dataframe) == 1
+    app.text_input(key="dashboard-search").set_value("inexistente").run()
+    assert not app.exception and not app.dataframe
+    assert len(store.read().items) == 2
+
+
+def test_pending_approval_disables_cached_examples(
+    app_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cache_answer(app_env)
+    monkeypatch.setattr(
+        resources,
+        "build_model",
+        lambda settings: scripted_model(
+            lambda info: ModelResponse(
+                parts=[ToolCallPart("save_result", {"name": "pendente", "query": TITLES_SQL})]
+            )
+        ),
+    )
+    app = page_app(run_ask_page).run()
+    app.chat_input[0].set_value("Salve os campeões.").run()
+    assert not app.exception and app.pills(key="example").disabled
+    assert app.chat_input[0].disabled
+    assert not saved_tables()

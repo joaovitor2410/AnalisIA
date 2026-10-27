@@ -45,7 +45,7 @@ class WorkspaceInUseError(RuntimeError):
         owner = f" (PID {self.owner_pid})" if self.owner_pid is not None else ""
         super().__init__(
             f"O workspace {path} já está em uso por outro processo{owner}. "
-            "Encerre a instância anterior do Olheiro com Ctrl+C no terminal onde ela foi "
+            "Encerre a instância anterior da AnalisIA com Ctrl+C no terminal onde ela foi "
             "iniciada e tente novamente. Para executar app, CLI ou MCP simultaneamente, "
             "configure WORKSPACE_PATH com um arquivo diferente para cada processo."
         )

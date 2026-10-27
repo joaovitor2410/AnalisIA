@@ -268,11 +268,13 @@ def test_ui_switches_domain_and_clears_pending_history_without_resetting_quota(
         app.session_state["history"] = ["histórico da outra base"]
         app.session_state["pending"] = "aprovação pendente"
         app.session_state["model_questions"] = 2
+        app.session_state["question_draft"] = "Rascunho da outra base"
         old_deps = app.session_state["deps"]
         app.selectbox(key="selected_dataset").set_value(str(second)).run()
         assert not app.exception
         assert app.session_state["history"] == [] and app.session_state["pending"] is None
         assert app.session_state["model_questions"] == 2
+        assert not app.session_state.get("question_draft", "")
         assert any("Outra base" in caption.value for caption in app.caption)
         with pytest.raises(duckdb.ConnectionException):
             old_deps.con.execute("SELECT 1")

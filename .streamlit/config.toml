@@ -1,0 +1,24 @@
+[client]
+toolbarMode = "minimal"
+
+[theme]
+base = "light"
+primaryColor = "#6558E8"
+backgroundColor = "#F6F7FB"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#18243B"
+linkColor = "#5546D0"
+borderColor = "#E2E6F0"
+showWidgetBorder = true
+baseRadius = "large"
+buttonRadius = "large"
+font = "sans serif"
+codeBackgroundColor = "#EDF0F8"
+chartCategoricalColors = ["#6558E8", "#148B78", "#D48A38", "#3E77B6", "#AD629C"]
+
+[theme.sidebar]
+backgroundColor = "#111C30"
+secondaryBackgroundColor = "#1D2A43"
+textColor = "#E5EAF5"
+primaryColor = "#9AE8D2"
+borderColor = "#2E3E59"

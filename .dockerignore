@@ -4,6 +4,8 @@
 !pyproject.toml
 !uv.lock
 !.python-version
+!.streamlit/
+!.streamlit/config.toml
 !README.md
 !LICENSE
 !src/

@@ -4,6 +4,7 @@ Cada pergunta é independente (sem memória da conversa): toda resposta traz a p
 """
 
 from dataclasses import dataclass
+from html import escape
 
 import duckdb
 import streamlit as st
@@ -13,9 +14,11 @@ from olheiro.agent import AgentDeps, AgentReport, PendingApproval, resume
 from olheiro.cache import ask_with_cache
 from olheiro.db import WORKSPACE_CATALOG
 from olheiro.errors import explain_model_failure
+from olheiro.semantic import columns_by_table
 from olheiro.telemetry import tracked
 from olheiro.tools import query_rows
 from olheiro.ui.components import show_report, show_table
+from olheiro.ui.presentation import context_strip, page_intro
 from olheiro.ui.resources import AppResources, load_resources, session_deps
 
 MAX_EXAMPLES = 6
@@ -45,17 +48,33 @@ def ask_page() -> None:
     st.session_state.setdefault("pending", None)
     st.session_state.setdefault("model_questions", 0)
 
-    st.title("Perguntar aos dados")
-    st.caption(
-        f"{resources.settings.dataset_title}. Cada resposta traz o SQL e a tabela que a sustentam."
+    page_intro(
+        "Seu próximo insight começa aqui",
+        "Perguntar aos dados",
+        "Converse com a AnalisIA. Descubra respostas em português e confira os dados da análise.",
     )
+    tables = columns_by_table(deps.con, "schema_name", "raw")
+    context_strip(resources.settings.dataset_title, len(tables), sum(map(len, tables.values())))
+    pending: PendingTurn | None = st.session_state.pending
+    if not st.session_state.history:
+        show_welcome(resources, list(tables), pending is not None)
+    else:
+        with st.container(horizontal=True, horizontal_alignment="right"):
+            st.button(
+                "Nova exploração",
+                key="new-exploration",
+                icon=":material/add_comment:",
+                on_click=clear_history,
+                disabled=pending is not None,
+                help="Limpa o histórico desta sessão. Itens fixados permanecem no dashboard.",
+            )
     show_examples(resources)
     if resources.settings.olheiro_demo_mode:
         st.caption("Demonstração: itens fixados e histórico ficam disponíveis só nesta sessão.")
 
     for index, turn in enumerate(st.session_state.history):
         show_turn(index, turn, resources)
-    pending: PendingTurn | None = st.session_state.pending
+    show_draft(pending is not None)
     if pending is not None:
         show_approval(pending, resources, deps)
 
@@ -67,6 +86,117 @@ def ask_page() -> None:
         with st.chat_message("assistant"), st.spinner("Analisando os dados…"):
             handle_question(question, resources, deps)
         st.rerun()
+    st.caption("Cada pergunta é independente. Inclua o contexto que a AnalisIA precisa analisar.")
+
+
+def show_welcome(resources: AppResources, tables: list[str], pending: bool) -> None:
+    st.html(
+        '<section class="ai-hero"><div class="ai-label">'
+        "DADOS EM PERGUNTAS. PERGUNTAS EM DESCOBERTAS.</div>"
+        "<p>Uma visão geral, uma comparação ou aquele número que faltava. "
+        "Comece com uma pergunta: a AnalisIA reúne a análise "
+        "e as evidências para você conferir.</p>"
+        '<div class="ai-steps"><span><b>01</b> Faça uma pergunta</span>'
+        "<span><b>02</b> Explore as evidências</span><span><b>03</b> Monte seu dashboard</span>"
+        "</div></section>"
+    )
+    if (
+        resources.settings.olheiro_demo_mode
+        or resources.model is None
+        or not tables
+        or pending
+        or st.session_state.get("question_draft")
+    ):
+        return
+    table = 'raw."' + tables[0].replace('"', '""') + '"'
+    starters = [
+        (
+            "overview",
+            "↗",
+            "Uma visão geral",
+            "Entenda o tamanho e as possibilidades da base.",
+            f"Faça um resumo da tabela {table}: quantidade de registros, colunas disponíveis "
+            "e possibilidades de análise. Sustente as contagens com SQL.",
+        ),
+        (
+            "quality",
+            "◇",
+            "Conhecer a qualidade",
+            "Investigue valores ausentes antes de analisar.",
+            f"Analise os valores ausentes da tabela {table}. Mostre a contagem de nulos por coluna "
+            "e a quantidade total de registros, com evidência SQL.",
+        ),
+        (
+            "patterns",
+            "≋",
+            "Encontrar padrões",
+            "Explore categorias e frequências nos dados.",
+            f"Explore as categorias mais frequentes na tabela {table}. Confira tipos e valores "
+            "antes de escolher uma coluna e mostre as frequências com SQL.",
+        ),
+    ]
+    st.caption("ESCOLHA UM PONTO DE PARTIDA · você pode editar antes de enviar")
+    for column, (key, icon, title, description, question) in zip(
+        st.columns(3), starters, strict=True
+    ):
+        with column, st.container(border=True, key=f"starter-{key}"):
+            st.html(
+                f'<span class="ai-card-icon" aria-hidden="true">{icon}</span>'
+                f'<p class="ai-card-title">{escape(title)}</p>'
+                f'<p class="ai-card-copy">{escape(description)}</p>'
+            )
+            st.button(
+                "Preparar pergunta",
+                key=f"suggest-{key}",
+                width="stretch",
+                on_click=prepare_question,
+                args=(question,),
+            )
+
+
+def prepare_question(question: str) -> None:
+    """Sugestão vira rascunho editável; nenhuma requisição é feita antes do envio."""
+    st.session_state.question_draft = question
+
+
+def submit_draft() -> None:
+    question = st.session_state.get("question_draft", "").strip()
+    if question:
+        st.session_state.queued_question = question
+    st.session_state.question_draft = ""
+
+
+def clear_history() -> None:
+    st.session_state.history = []
+    st.session_state.question_draft = ""
+
+
+def discard_draft() -> None:
+    st.session_state.question_draft = ""
+
+
+def show_draft(pending: bool) -> None:
+    if not st.session_state.get("question_draft"):
+        return
+    with st.container(border=True, key="question-draft"):
+        st.caption("SUA PERGUNTA · revise e envie quando estiver pronta")
+        st.text_area("Edite sua pergunta", key="question_draft", disabled=pending, height=110)
+        st.button(
+            "Analisar pergunta",
+            key="send-draft",
+            type="primary",
+            icon=":material/arrow_upward:",
+            on_click=submit_draft,
+            disabled=pending or not st.session_state.question_draft.strip(),
+        )
+        st.button(
+            "Escolher outra sugestão",
+            key="discard-draft",
+            type="tertiary",
+            on_click=discard_draft,
+            disabled=pending,
+        )
+        st.caption("O envio usa o modelo configurado e conta no limite da sessão, se houver.")
 
 
 def show_examples(resources: AppResources) -> None:
@@ -78,6 +208,7 @@ def show_examples(resources: AppResources) -> None:
             examples,
             key="example",
             on_change=queue_example,
+            disabled=st.session_state.get("pending") is not None,
         )
 
 
