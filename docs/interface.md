@@ -1,8 +1,9 @@
 # AnalisIA — identidade e experiência visual
 
 Em 27/10/2026, o autor escolheu **AnalisIA** como nome do agente e pediu uma interface mais
-bonita, interativa e clara. Esta entrega é a F9A.1; a etapa de qualidade/semântica F9B continua
-no roteiro. O nome aparece na interface, no título da aba, nas instruções do agente e na
+bonita, interativa e clara. A identidade foi entregue na F9A.1; a F9B acrescenta prévia,
+diagnósticos e editor de semântica, descritos em [qualidade dos dados](qualidade.md).
+O nome aparece na interface, no título da aba, nas instruções do agente e na
 identificação do servidor MCP.
 
 ## Abrir
@@ -32,7 +33,9 @@ compatibilidade com as integrações já configuradas.
 - **Dashboard:** busca por título/pergunta e filtro entre indicadores, gráficos e tabelas.
   Os filtros atuam nos metadados salvos e não chamam o modelo nem removem itens.
 - **Dados:** contexto da base, dicionário recolhível, prévia ajustável de 10–50 linhas e
-  indicadores reais de registros/nulos/distintos no perfil da coluna. Importação com ação primária.
+  indicadores reais de registros/nulos/distintos no perfil da coluna. A F9B exige prévia
+  compatível com os arquivos/tipos antes de importar e acrescenta diagnósticos sob demanda
+  e editor de descrições, unidades e regras nas bases pessoais importadas.
 - **Aprovação:** pendências continuam explícitas; entrada e exemplos ficam desabilitados
   durante uma aprovação. Trocar a base remove também rascunho e filtros da base anterior.
 - **Demo:** exemplos curados e estado por sessão preservados. Sugestões que exigem modelo

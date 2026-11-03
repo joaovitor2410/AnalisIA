@@ -23,6 +23,8 @@ seus nomes técnicos; `uv run analisia` é a entrada principal do navegador.
 - **MCP:** expõe SQL, perfis, contexto e perguntas ao agente em modo de leitura.
 - **Bases:** importação por upload ou terminal; catálogo automático, glossário opcional e
   workspace, cache e dashboard separados por base.
+- **Qualidade e semântica:** prévia de importação, ajuste de tipos e codificação, diagnóstico
+  de nulos/duplicidades, verificação de relacionamentos e editor de descrições, unidades e regras.
 
 O modelo gera a análise; os números exibidos vêm do SQL executado no DuckDB. A validação
 não garante toda afirmação qualitativa do modelo: a evidência fica disponível para inspeção.
@@ -58,7 +60,8 @@ Para conectar ao Claude, veja [docs/mcp.md](docs/mcp.md).
 ## Usar seus CSVs e Parquets
 
 No modo pessoal, abra **Dados → Importar outra base**, envie arquivos e informe um nome e
-identificador. A base é selecionada após a importação; a barra lateral permite trocar.
+identificador. Confira a prévia e os tipos antes de importar; use `VARCHAR` para preservar
+códigos com zeros iniciais. A base é selecionada após a importação; a barra lateral permite trocar.
 O limite padrão é 50 MB por importação. Não é preciso escrever um glossário para começar.
 
 Exemplo com dados sintéticos de uma loja:
@@ -79,6 +82,9 @@ A [auditoria do projeto](docs/auditoria-2026-10-27.md) registra os achados, o es
 e a sequência proposta: qualidade/semântica, avaliações em outros domínios e contexto de conversa.
 A [revisão de 03/11/2026](docs/auditoria-2026-11-03.md) corrige falhas de cache, validação SQL,
 avaliação da evidência e tratamento de erros, e detalha a próxima etapa F9B.
+A **F9B foi implementada**: veja [qualidade e semântica dos dados](docs/qualidade.md) para usar
+prévia, tipos reproduzíveis, diagnósticos e edição das regras. Catálogos grandes têm busca
+seletiva para o agente e o MCP.
 
 ## Demo para visitantes
 
@@ -128,8 +134,9 @@ visitantes e publicação online ficam para a próxima etapa.
 
 Detalhes em [docs/deployment.md](docs/deployment.md). A infraestrutura base passou na
 [CI com Docker](https://github.com/joaovitor2410/AnalisIA/actions/runs/40365502597).
-A [CI do último push](https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772) passou
-nos cenários pessoal e demo. As mudanças de importação desta etapa aguardam novo push aprovado.
+A [CI da F8B](https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772) passou
+nos cenários pessoal e demo. A [CI da auditoria e F9A/F9A.1](https://github.com/joaovitor2410/AnalisIA/actions/runs/41632724779)
+também passou após o push de 03/11. A nova imagem da F9B aguarda seu próprio push e CI.
 
 ## Arquitetura
 

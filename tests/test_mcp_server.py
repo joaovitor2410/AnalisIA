@@ -88,7 +88,14 @@ def error_text(result: CallToolResult) -> str:
 async def test_discovery_exposes_typed_tools_resource_and_prompt(settings: Settings) -> None:
     async with Client(mcp_server.create_server(settings)) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
-        assert set(tools) == {"run_sql", "profile_column", "ask_question"}
+        assert set(tools) == {
+            "run_sql",
+            "profile_column",
+            "ask_question",
+            "discover_tables",
+            "describe_table",
+            "read_semantics",
+        }
         for tool in tools.values():
             assert tool.annotations.read_only_hint is True
             assert "ctx" not in tool.input_schema["properties"]

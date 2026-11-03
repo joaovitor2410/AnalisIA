@@ -17,7 +17,10 @@ import duckdb
 
 from olheiro.config import DatasetManifest, Settings, get_settings
 from olheiro.db import find_data_files, load_files, validate_data_files
+from olheiro.import_options import ImportOptions, load_import_options
+from olheiro.ingestion import preview_files
 from olheiro.semantic import check_glossary, load_glossary
+from olheiro.tools import interrupt_after
 
 DATASET_NAME = re.compile(r"[a-z][a-z0-9_-]{0,63}\Z")
 
@@ -37,7 +40,12 @@ def discover_datasets(root: Path) -> dict[Path, str]:
 
 
 def import_dataset(
-    files: list[Path], root: Path, name: str, title: str, glossary: Path | None = None
+    files: list[Path],
+    root: Path,
+    name: str,
+    title: str,
+    glossary: Path | None = None,
+    options: ImportOptions | None = None,
 ) -> Path:
     """Cria uma base nova sem sobrescrever base, workspace ou arquivos de outra importação."""
     if not DATASET_NAME.fullmatch(name):
@@ -46,6 +54,8 @@ def import_dataset(
         )
     manifest = DatasetManifest(title=title.strip(), glossary=glossary is not None)
     validate_data_files(files)
+    options = options or ImportOptions()
+    options.validate_files(files)
     target = root / name
     target.mkdir(parents=True, exist_ok=False)  # reserva exclusiva, inclusive entre processos
     try:
@@ -55,11 +65,13 @@ def import_dataset(
             shutil.copyfile(source, raw / source.name)
         if glossary is not None:
             shutil.copyfile(glossary, target / "glossary.toml")
+        (target / "import.json").write_text(options.model_dump_json(indent=2), encoding="utf-8")
         # Importação é uma operação do usuário; o agente não recebe acesso aos leitores.
         with duckdb.connect(str(target / "source.duckdb")) as con:
             con.execute("SET memory_limit='1GB'")
             con.execute("SET threads=2")
-            loaded = load_files(con, find_data_files(raw))
+            with interrupt_after(con, 10):
+                loaded = load_files(con, find_data_files(raw), options)
             problems = check_glossary(
                 load_glossary(target / "glossary.toml" if manifest.glossary else None),
                 con,
@@ -87,15 +99,20 @@ def dataset_identity(settings: Settings) -> str:
     return hashlib.sha256(str(settings.duckdb_path.resolve()).encode()).hexdigest()
 
 
-def cache_revision(settings: Settings) -> str:
-    """Muda quando os dados ou a semântica mudam, mesmo com nomes/tipos iguais."""
+def database_revision(settings: Settings) -> str:
+    """Hash dos dados, reaproveitado pela UI enquanto a conexão de leitura permanecer aberta."""
     digest = hashlib.sha256(dataset_identity(settings).encode())
-    for path in (settings.duckdb_path, settings.glossary_path):
-        if path is not None:
-            with path.open("rb") as file:
-                for chunk in iter(lambda: file.read(1024 * 1024), b""):
-                    digest.update(chunk)
-        digest.update(b"\x00")
+    with settings.duckdb_path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def cache_revision(settings: Settings, data_revision: str | None = None) -> str:
+    """Muda quando os dados ou a semântica mudam, mesmo com nomes/tipos iguais."""
+    digest = hashlib.sha256((data_revision or database_revision(settings)).encode())
+    if settings.glossary_path is not None:
+        digest.update(settings.glossary_path.read_bytes())
     return digest.hexdigest()
 
 
@@ -108,6 +125,10 @@ def main(argv: list[str] | None = None) -> None:
     importer.add_argument("--name", required=True, help="identificador único, ex.: vendas")
     importer.add_argument("--title", help="nome para exibir na interface")
     importer.add_argument("--glossary", type=Path, help="TOML opcional com descrições/regras")
+    importer.add_argument("--options", type=Path, help="JSON com opções de leitura por arquivo")
+    preview = commands.add_parser("preview", help="confere leitura e tipos sem criar uma base")
+    preview.add_argument("source", type=Path)
+    preview.add_argument("--options", type=Path)
     commands.add_parser("list", help="lista bases disponíveis")
     args = parser.parse_args(argv)
     settings = get_settings()
@@ -118,12 +139,19 @@ def main(argv: list[str] | None = None) -> None:
             print(f"{title}\t{path}")
         return
     try:
+        options = load_import_options(args.options)
+        if args.command == "preview":
+            for table in preview_files(find_data_files(args.source), options):
+                print(f"raw.{table.table}: {table.row_count} linhas — {table.columns}")
+                print(table.sample.to_markdown())
+            return
         path = import_dataset(
             find_data_files(args.source),
             settings.datasets_dir,
             args.name,
             args.title or args.name,
             args.glossary,
+            options,
         )
     except (ValueError, OSError, duckdb.Error) as error:
         sys.exit(f"Não foi possível importar: {error}")

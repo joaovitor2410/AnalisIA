@@ -86,7 +86,9 @@ def test_simultaneous_first_start_does_not_replace_a_new_database(
 ) -> None:
     original = launcher.load_raw_dir
 
-    def concurrent_load(con: duckdb.DuckDBPyConnection, raw_dir: Path) -> object:
+    def concurrent_load(
+        con: duckdb.DuckDBPyConnection, raw_dir: Path, options: object = None
+    ) -> object:
         loaded = original(con, raw_dir)
         # Outro processo termina primeiro e publica uma base com um registro próprio.
         with connect(settings.duckdb_path) as other:

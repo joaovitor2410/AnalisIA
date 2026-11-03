@@ -16,13 +16,14 @@ from pydantic_ai.models import Model
 from pydantic_ai.usage import UsageLimits
 
 from olheiro.agent import AgentDeps, build_model
-from olheiro.cache import AnswerCache
+from olheiro.cache import AnswerCache, CacheFile
 from olheiro.config import PROJECT_ROOT, Settings, get_settings
 from olheiro.dashboard import DashboardStore
-from olheiro.datasets import cache_revision, dataset_identity
+from olheiro.datasets import cache_revision, database_revision, dataset_identity
 from olheiro.db import connect_agent, session_cursor
 from olheiro.demo import QuestionBudget, load_examples
 from olheiro.semantic import Glossary, load_glossary
+from olheiro.storage import JsonFile
 from olheiro.telemetry import RunLog
 from olheiro.tracing import setup_tracing
 
@@ -38,6 +39,19 @@ class AppResources:
     model: Model | None  # None sem chave: o app ainda mostra dados, dashboard e cache
     model_error: str | None
     budget: QuestionBudget | None = None
+    data_revision: str | None = None
+
+
+@st.cache_resource(show_spinner=False)
+def shared_cache_file(path: Path) -> JsonFile[CacheFile]:
+    """Todas as revisões da base compartilham o lock de escrita dentro do processo."""
+    return JsonFile(path, CacheFile)
+
+
+def dataset_cache(path: Path, revision: str) -> AnswerCache:
+    cache = AnswerCache(None, revision)
+    cache.file = shared_cache_file(path)
+    return cache
 
 
 @st.cache_resource(show_spinner=False)
@@ -71,10 +85,11 @@ def shared_resources(dataset_path: str | None = None) -> AppResources:
     )
     try:
         demo = settings.olheiro_demo_mode
+        revision = None if demo else database_revision(settings)
         cache = (
             load_examples(settings.demo_examples_path, con)
             if demo
-            else AnswerCache(settings.answer_cache_path, cache_revision(settings))
+            else dataset_cache(settings.answer_cache_path, cache_revision(settings, revision))
         )
         return AppResources(
             settings=settings,
@@ -90,6 +105,7 @@ def shared_resources(dataset_path: str | None = None) -> AppResources:
             model=model,
             model_error=model_error,
             budget=QuestionBudget(settings.olheiro_demo_total_question_limit) if demo else None,
+            data_revision=revision,
         )
     except Exception:
         con.close()
@@ -99,6 +115,20 @@ def shared_resources(dataset_path: str | None = None) -> AppResources:
 def load_resources() -> AppResources:
     """Dados públicos compartilhados; cache e painel privados para cada sessão da demo."""
     shared = shared_resources(st.session_state.get("selected_dataset"))
+    if not shared.settings.olheiro_demo_mode and shared.settings.olheiro_dataset is not None:
+        settings = shared.settings.for_dataset(shared.settings.olheiro_dataset)
+        revision = cache_revision(settings, shared.data_revision)
+        shared = replace(
+            shared,
+            settings=settings,
+            glossary=load_glossary(settings.glossary_path),
+            cache=dataset_cache(settings.answer_cache_path, revision),
+        )
+        previous_revision = st.session_state.get("semantic_revision")
+        if previous_revision is not None and previous_revision != revision:
+            for key in ("history", "pending", "question_draft", "queued_question", "example"):
+                st.session_state.pop(key, None)
+        st.session_state.semantic_revision = revision
     previous = st.session_state.get("resource_connection")
     if previous is not shared.con:
         old_deps = st.session_state.pop("deps", None)
@@ -138,4 +168,6 @@ def session_deps(resources: AppResources) -> AgentDeps:
             allow_saves=not demo,
             usage_limits=UsageLimits(request_limit=6, tool_calls_limit=12) if demo else None,
         )
+    else:
+        st.session_state.deps.glossary = resources.glossary
     return st.session_state.deps

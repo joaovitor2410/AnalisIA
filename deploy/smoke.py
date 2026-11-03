@@ -16,7 +16,12 @@ from streamlit.testing.v1 import AppTest
 from olheiro.config import Settings, get_settings
 from olheiro.datasets import import_dataset
 from olheiro.db import connect_agent, scalar
+from olheiro.import_options import FileOptions, ImportOptions
+from olheiro.ingestion import preview_files
 from olheiro.launcher import ensure_database
+from olheiro.quality import check_relationship, table_quality
+from olheiro.semantic import Glossary, load_glossary
+from olheiro.semantic_store import manifest_revision, save_dataset_glossary
 from olheiro.tools import run_sql
 
 
@@ -52,14 +57,17 @@ def check_import(settings: Settings) -> None:
     with TemporaryDirectory(prefix="smoke-import-", dir=settings.datasets_dir) as folder:
         root = Path(folder)
         csv = root / "pedidos.csv"
-        csv.write_text("cliente_id;valor\n1;10\n2;20\n", encoding="utf-8")
+        csv.write_text("cliente_id;valor\n001;10\n002;20\n", encoding="utf-8")
         parquet = root / "clientes.parquet"
         with duckdb.connect() as con:
             con.execute(
-                "COPY (SELECT * FROM (VALUES (1), (2)) t(cliente_id)) TO ? (FORMAT PARQUET)",
+                "COPY (SELECT * FROM (VALUES ('001'), ('002')) t(cliente_id)) "
+                "TO ? (FORMAT PARQUET)",
                 [str(parquet)],
             )
-        manifest = import_dataset([csv, parquet], root / "bases", "loja", "Loja")
+        options = ImportOptions(files={csv.name: FileOptions(types={"cliente_id": "VARCHAR"})})
+        preview = preview_files([csv, parquet], options)
+        manifest = import_dataset([csv, parquet], root / "bases", "loja", "Loja", options=options)
         # A demo não oferece importação; esta verificação exercita apenas o backend local.
         config = settings.model_copy(update={"olheiro_demo_mode": False}).for_dataset(manifest)
         with connect_agent(config.duckdb_path, None) as con:
@@ -70,6 +78,14 @@ def check_import(settings: Settings) -> None:
                 == 30
             )
             assert "error" in run_sql(con, "SELECT * FROM read_csv('/etc/hosts')")
+            assert con.execute("SELECT * FROM raw.pedidos").fetchall() == preview[0].sample.rows
+            assert table_quality(con, "pedidos").duplicate_rows == 0
+            assert check_relationship(
+                con, "pedidos", "cliente_id", "clientes", "cliente_id"
+            ).compatible
+            glossary = Glossary(rules=["Valores dos pedidos em reais."])
+            updated = save_dataset_glossary(config, con, glossary, manifest_revision(manifest))
+            assert load_glossary(updated.glossary_path) == glossary
 
 
 def main() -> None:

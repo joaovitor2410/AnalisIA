@@ -28,6 +28,9 @@ class DatasetManifest(BaseModel):
     version: Literal[1] = 1
     title: str = Field(min_length=1, max_length=120)
     glossary: bool = False
+    glossary_file: str = Field(
+        default="glossary.toml", pattern=r"^glossary(?:\.[a-f0-9]{64})?\.toml$"
+    )
 
 
 class Settings(BaseSettings):
@@ -50,6 +53,7 @@ class Settings(BaseSettings):
     exports_dir: Path = Path("data/exports")
     workspace_path: Path = Path("data/workspace.duckdb")
     glossary_path: Path | None = Path("semantic/glossary.toml")
+    import_options_path: Path | None = None
     answer_cache_path: Path = Path("data/answer_cache.json")
     dashboard_path: Path = Path("data/dashboard.json")
     datasets_dir: Path = Path("data/datasets")
@@ -80,6 +84,7 @@ class Settings(BaseSettings):
         "exports_dir",
         "workspace_path",
         "glossary_path",
+        "import_options_path",
         "answer_cache_path",
         "dashboard_path",
         "traces_path",
@@ -108,7 +113,10 @@ class Settings(BaseSettings):
                 "dataset_title": manifest.title,
                 "duckdb_path": root / "source.duckdb",
                 "raw_data_dir": root / "raw",
-                "glossary_path": root / "glossary.toml" if manifest.glossary else None,
+                "glossary_path": root / manifest.glossary_file if manifest.glossary else None,
+                "import_options_path": root / "import.json"
+                if (root / "import.json").is_file()
+                else None,
                 "workspace_path": self.olheiro_workspace_override or root / "workspace.duckdb",
                 "answer_cache_path": root / "answer_cache.json",
                 "dashboard_path": root / "dashboard.json",

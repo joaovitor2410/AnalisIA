@@ -7,15 +7,20 @@ Organização:
 """
 
 import re
+import shutil
 import sys
 import unicodedata
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 import duckdb
 
 from olheiro.config import get_settings
+from olheiro.import_options import FileOptions, ImportOptions, load_import_options
 
 RAW_SCHEMA = "raw"
 # Nome com que o banco de trabalho é anexado: tabelas salvas viram workspace.<nome>.
@@ -173,31 +178,83 @@ def load_csv(con: duckdb.DuckDBPyConnection, csv_path: Path) -> LoadedTable:
     return load_data_file(con, csv_path)
 
 
-def load_data_file(con: duckdb.DuckDBPyConnection, path: Path) -> LoadedTable:
+@contextmanager
+def csv_source(path: Path, encoding: str) -> Iterator[Path]:
+    """Transcodifica sem extensões nem downloads; a cópia original permanece intacta."""
+    if encoding == "utf-8":
+        yield path
+        return
+    with TemporaryDirectory(prefix="analisia-encoding-") as folder:
+        converted = Path(folder) / "source.csv"
+        with (
+            path.open(encoding=encoding, newline="") as source,
+            converted.open("w", encoding="utf-8", newline="") as target,
+        ):
+            shutil.copyfileobj(source, target)
+        yield converted
+
+
+def load_data_file(
+    con: duckdb.DuckDBPyConnection, path: Path, options: FileOptions | None = None
+) -> LoadedTable:
     """Materializa um arquivo: o agente consulta a tabela sem acesso externo ao arquivo."""
     name = table_name_from_file(path)
     reader = DATA_READERS[path.suffix.lower()]
-    options = ", sample_size=-1" if reader == "read_csv" else ""
-    con.execute(
-        f'CREATE TABLE {RAW_SCHEMA}."{name}" AS SELECT * FROM {reader}(?{options})',
-        [str(path)],
-    )
+    options = options or FileOptions()
+    if reader == "read_csv":
+        arguments: dict[str, Any] = {
+            "sample_size": -1,
+            "decimal_separator": options.decimal_separator,
+            "all_varchar": options.all_varchar,
+        }
+        if options.delimiter is not None:
+            arguments["delim"] = options.delimiter
+        if options.header is not None:
+            arguments["header"] = options.header
+        if options.types:
+            arguments["types"] = options.types
+        parameters = ", ".join(f"{key}=?" for key in arguments)
+        with csv_source(path, options.encoding) as source:
+            con.execute(
+                f'CREATE TABLE {RAW_SCHEMA}."{name}" AS SELECT * FROM read_csv(?, {parameters})',
+                [str(source), *arguments.values()],
+            )
+    else:
+        casts = ", ".join(
+            f"CAST({quote_identifier(column)} AS {kind}) AS {quote_identifier(column)}"
+            for column, kind in options.types.items()
+        )
+        projection = f"* REPLACE ({casts})" if casts else "*"
+        con.execute(
+            f'CREATE TABLE {RAW_SCHEMA}."{name}" AS SELECT {projection} FROM read_parquet(?)',
+            [str(path)],
+        )
+    columns = con.execute(f'DESCRIBE {RAW_SCHEMA}."{name}"').fetchall()
+    missing = options.types.keys() - {row[0] for row in columns}
+    if missing:
+        raise ValueError(f"Tipos configurados para colunas inexistentes: {sorted(missing)}")
     row_count = scalar(con, f'SELECT count(*) FROM {RAW_SCHEMA}."{name}"')
-    column_count = len(con.execute(f'DESCRIBE {RAW_SCHEMA}."{name}"').fetchall())
+    column_count = len(columns)
     return LoadedTable(name, path, row_count, column_count)
 
 
-def load_raw_dir(con: duckdb.DuckDBPyConnection, raw_dir: Path) -> list[LoadedTable]:
+def load_raw_dir(
+    con: duckdb.DuckDBPyConnection, raw_dir: Path, options: ImportOptions | None = None
+) -> list[LoadedTable]:
     """Recria raw com CSV/Parquet da pasta; falhas preservam a carga anterior."""
-    return load_files(con, find_data_files(raw_dir))
+    return load_files(con, find_data_files(raw_dir), options)
 
 
-def load_files(con: duckdb.DuckDBPyConnection, files: list[Path]) -> list[LoadedTable]:
+def load_files(
+    con: duckdb.DuckDBPyConnection, files: list[Path], options: ImportOptions | None = None
+) -> list[LoadedTable]:
     """Recria o schema raw do zero com os arquivos validados.
 
     Tudo roda numa transação: se um CSV falhar, o banco continua como estava.
     """
     validate_data_files(files)
+    options = ImportOptions.model_validate((options or ImportOptions()).model_dump())
+    options.validate_files(files)
     con.execute("BEGIN TRANSACTION")
     try:
         con.execute(f"DROP SCHEMA IF EXISTS {RAW_SCHEMA} CASCADE")
@@ -205,7 +262,7 @@ def load_files(con: duckdb.DuckDBPyConnection, files: list[Path]) -> list[Loaded
         # Até a Fase 2 havia um schema "workspace" vazio aqui; ele colidiria com o catálogo
         # "workspace" anexado na conexão do agente (referência ambígua).
         con.execute(f"DROP SCHEMA IF EXISTS {WORKSPACE_CATALOG} CASCADE")
-        loaded = [load_data_file(con, path) for path in files]
+        loaded = [load_data_file(con, path, options.files.get(path.name)) for path in files]
         con.execute("COMMIT")
     except Exception:
         con.execute("ROLLBACK")
@@ -220,7 +277,9 @@ def main() -> None:
         sys.exit(f"Nenhum CSV ou Parquet em {settings.raw_data_dir}. Coloque os arquivos lá.")
 
     with connect(settings.duckdb_path) as con:
-        loaded = load_raw_dir(con, settings.raw_data_dir)
+        loaded = load_raw_dir(
+            con, settings.raw_data_dir, load_import_options(settings.import_options_path)
+        )
 
     print(f"Banco: {settings.duckdb_path}")
     for table in loaded:

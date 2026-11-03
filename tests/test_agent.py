@@ -249,3 +249,27 @@ def test_destructive_sql_from_the_model_is_refused_and_raw_stays_intact(
     refusal = parts_of(script.received[1], ToolReturnPart)[0].content
     assert refusal["error"].startswith("Consulta recusada")
     assert con.execute("SELECT count(*) FROM raw.brasileirao").fetchone()[0] == 3
+
+
+def test_agent_discovers_and_analyzes_a_table_omitted_from_the_initial_context() -> None:
+    from olheiro.semantic import render_context
+
+    with duckdb.connect() as con:
+        con.execute("CREATE SCHEMA raw")
+        con.execute("ATTACH ':memory:' AS workspace")
+        for n in range(25):
+            con.execute(f"CREATE TABLE raw.t{n:02d} AS SELECT 1 AS a, 2 AS b, 3 AS c, 4 AS d")
+        con.execute("CREATE TABLE raw.z_vendas AS SELECT 125 AS valor")
+        deps = AgentDeps(con)
+        assert "raw.z_vendas" not in render_context(deps.glossary, con)
+        script = ScriptedModel(
+            call_tool("discover_tables", search="z_vendas"),
+            call_tool("describe_table", table="raw.z_vendas"),
+            answer(
+                answerable=True, answer="O total é 125.", sql="SELECT sum(valor) FROM raw.z_vendas"
+            ),
+        )
+        result = ask("Qual o total de vendas?", deps, script.model())
+        assert isinstance(result, AgentReport) and result.evidence.rows == [(125,)]
+        assert "raw.z_vendas" in str(parts_of(script.received[1], ToolReturnPart)[0].content)
+        assert "valor INTEGER" in str(parts_of(script.received[2], ToolReturnPart)[-1].content)

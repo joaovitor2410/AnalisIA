@@ -72,8 +72,16 @@ Na configuração de um host MCP, a variável pode ser passada em `env` junto de
 | `run_sql` | `query`: um SELECT DuckDB | `columns`, `rows`, `truncated` | Não |
 | `profile_column` | `table`, `column` | Tipo, nulos, distintos e valores frequentes de raw | Não |
 | `ask_question` | `question`, `use_cache=true` | `output`, `evidence`, modelo, cache e tokens | Só se faltar cache |
+| `discover_tables` | `search=""`, `offset=0` | Busca paginada por tabela, coluna ou descrição | Não |
+| `describe_table` | `table`, `offset=0` | Vinte colunas por página, com tipos e descrições resumidas | Não |
+| `read_semantics` | `table=""`, `column=""`, `offset=0` | Descrição/unidade integral ou duas regras por página | Não |
 | Recurso `olheiro://context` | URI fixa | Catálogo atual + glossário + valores + regras | Não |
 | Prompt `analyze_data` | `question` | Mensagem de análise com evidências, pronta para o cliente | Não |
+
+Na F9B, `olheiro://context` limita o contexto inicial de dados a 12.000 caracteres e 80
+colunas. Se houver resumo/truncamento, use as ferramentas de descoberta e paginação acima.
+O editor da interface pessoal publica versões de semântica; o MCP consulta a versão atual
+e invalida respostas em cache após mudanças, sem reiniciar. Veja [qualidade e semântica](qualidade.md).
 
 `run_sql` e `profile_column` permitem que o próprio modelo do cliente conduza a análise;
 `ask_question` delega a análise ao agente do Olheiro. A recusa por dados ausentes é uma saída

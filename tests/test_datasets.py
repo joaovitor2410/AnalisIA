@@ -382,7 +382,11 @@ def test_upload_form_imports_safely_and_reports_invalid_submissions(
     app = AppTest.from_function(import_form, default_timeout=20).run()
     app.text_input[0].set_value("Vendas")
     app.text_input[1].set_value("vendas")
-    app.button[0].click().run()
+    if scenario in {"valid", "missing"}:
+        app.button(key="preview-import").click().run()
+    if scenario == "valid":
+        assert not discover_datasets(root)  # conferir não publica a base
+        app.button(key="confirm-import").click().run()
     assert not app.exception
     if scenario == "valid":
         assert not app.error

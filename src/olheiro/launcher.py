@@ -15,6 +15,7 @@ import duckdb
 from olheiro.check_setup import check_glossary_sync, check_tables
 from olheiro.config import Settings, get_settings
 from olheiro.db import WorkspaceInUseError, connect, connect_agent, find_data_files, load_raw_dir
+from olheiro.import_options import load_import_options
 
 
 def validate_database(settings: Settings) -> None:
@@ -35,7 +36,9 @@ def ensure_database(settings: Settings) -> bool:
     with TemporaryDirectory(prefix="olheiro-load-", dir=settings.duckdb_path.parent) as folder:
         candidate = Path(folder) / "olheiro.duckdb"
         with connect(candidate) as con:
-            load_raw_dir(con, settings.raw_data_dir)
+            load_raw_dir(
+                con, settings.raw_data_dir, load_import_options(settings.import_options_path)
+            )
         validate_database(settings.model_copy(update={"duckdb_path": candidate}))
         try:
             # O link publica o arquivo completo sem substituir uma base que outro

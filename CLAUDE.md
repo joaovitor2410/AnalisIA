@@ -352,6 +352,38 @@ data/exports/               exportações do agente (ignorado no Git)
   `uv run --locked ruff check .`, `uv run --locked ruff format --check .`,
   `uv run --locked mypy`, `uv build --offline`, `uv run --locked olheiro-check`.
 
+- [x] **Fase 9B: qualidade e semântica (03/11/2026).** Autor autorizou o push da auditoria
+  e o avanço. `762c0cb` enviado a `origin/main` (inclui F9A e F9A.1); CI de qualidade e
+  contêiner pessoal/demo aprovada em
+  https://github.com/joaovitor2410/AnalisIA/actions/runs/41632724779.
+  Prévia e importação compartilham a carga estrita, com opções por arquivo: cabeçalho,
+  separador, decimal, codificação (UTF-8/BOM, Latin-1, Windows-1252, UTF-16) e tipos explícitos.
+  Opções em `import.json` são usadas na recarga e no launcher; IDs preservados como VARCHAR.
+  UI impede importar uma prévia desatualizada. CLI ganha `preview` e `--options`.
+  Diagnósticos SQL de nulos/distintos/linhas repetidas e candidatas a chave; usuário propõe
+  pares de colunas e o verificador mede unicidade, cobertura, nulos e cardinalidade. Escopo
+  de chaves/relacionamentos é de uma coluna, sem supor o significado da relação.
+  Editor de tabelas/colunas/unidades/regras só em bases pessoais importadas; exemplo e demo
+  preservados. Publicação por glossário versionado + manifesto atômico, lock de arquivo
+  no macOS/Linux e revisão esperada para evitar sobrescrever edição concorrente. Versões
+  antigas são preservadas. UI/MCP leem a semântica nova e invalidam cache sem reabrir o
+  banco; UI limpa histórico/pendência/rascunho anterior sem zerar quota nem dashboard.
+  Contexto inicial de dados limitado a 12.000 caracteres/80 colunas; `discover_tables`,
+  `describe_table` e `read_semantics` paginados no agente e no MCP mantêm descoberta e
+  acesso integral às regras/descrições. O teto não inclui instruções/contratos de ferramentas.
+  **251 testes offline**, também em cópia sem `.env`/chaves; Ruff lint/format, mypy (38
+  módulos), diagnóstico e build wheel/sdist aprovados. Smoke de ingestão/qualidade/semântica
+  rodou localmente nos dois modos. Conferência visual no Chrome desktop com base sintética
+  em `/tmp`; instância temporária encerrada. Nenhuma chamada ao Gemini ou dependência nova.
+  Nova imagem F9B precisa de CI após push liberado pelo autor; o push desta solicitação
+  publicou a auditoria, antes da implementação da fase. Documentação em `docs/qualidade.md`,
+  incluindo opções reproduzíveis e três perguntas de revisão. Rodar:
+  `uv run --locked analisia`; testar: `uv run --locked pytest -q`,
+  `uv run --locked ruff check .`, `uv run --locked ruff format --check .`,
+  `uv run --locked mypy`, `uv build --offline`, `uv run --locked olheiro-check`.
+  Próximas etapas: F5 complementar (benchmark em outros domínios, rodada paga separada)
+  e F9C (contexto de conversa), respeitando a revisão de fim de fase pelo autor.
+
 ## Pendências / em aberto
 - **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB
   recomenda isolamento de SO/contêiner). Para deploy (F8): rodar em contêiner sem rede de saída
@@ -365,14 +397,15 @@ data/exports/               exportações do agente (ignorado no Git)
   `OLHEIRO_SESSION_QUESTION_LIMIT` limita só o app Streamlit, não o MCP local. Configuração de
   clientes documentada, sem alterar arquivos do Claude automaticamente.
 - **Para a publicação (F8C):** decidir hospedagem/acesso e condições dos dados; validar a imagem
-  com importação F9A após push (matriz F8B já verde); limites no provedor se habilitar perguntas.
+  F9B após novo push (auditoria/F9A/F9A.1 já verdes); limites no provedor se habilitar perguntas.
   A F8B já prepara exemplos versionados e estado por sessão. O orçamento é por processo:
   reinícios/replicação precisam ser considerados na hospedagem.
 - **Limitações conhecidas:** perguntas independentes (sem memória de conversa: "e em 2020?" não
   funciona). F9A invalida caches de outra revisão; cache legado é regenerado. JSONs ainda
   usam locks por objeto/thread, sem coordenação entre processos/réplicas. UI mantém conexões
-  das bases selecionadas no cache; medir ciclo de vida/memória com muitas bases. Inferência
-  automática de CSV ainda precisa de prévia e ajuste de tipos/codificação na F9B.
+  das bases selecionadas no cache; medir ciclo de vida/memória com muitas bases. F9B adicionou
+  prévia e tipos/codificações; significado de negócio, chaves compostas e acurácia real
+  continuam exigindo validação. Retenção das versões do glossário pertence à operação.
 - Empates: Corinthians e Palmeiras têm 4 títulos cada. Um teste meu com `LIMIT 1` escondeu o
   empate; o agente agora recebe a regra "confira empates (RANK() = 1)".
 - Aviso `DeprecationWarning: There is no current event loop` vem do `pydantic_graph` no

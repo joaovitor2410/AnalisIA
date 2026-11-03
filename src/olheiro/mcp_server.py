@@ -19,10 +19,11 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 from pydantic_ai.exceptions import AgentRunError, FallbackExceptionGroup
 
+from olheiro import semantic
 from olheiro.agent import AgentDeps, AgentReport, AnalysisAnswer, PendingApproval, ask, build_model
 from olheiro.cache import AnswerCache
 from olheiro.config import Settings, get_settings
-from olheiro.datasets import cache_revision
+from olheiro.datasets import cache_revision, database_revision
 from olheiro.db import connect_agent, session_cursor
 from olheiro.errors import explain_model_failure
 from olheiro.semantic import Glossary, load_glossary, render_context
@@ -79,22 +80,41 @@ class ServerState:
     glossary: Glossary
     cache: AnswerCache
     runs: RunLog
+    data_revision: str | None = None
 
     @contextmanager
-    def dependencies(self) -> Iterator[AgentDeps]:
+    def dependencies(self, settings: Settings | None = None) -> Iterator[AgentDeps]:
         cursor = session_cursor(self.con)
         try:
-            yield AgentDeps(cursor, self.glossary)
+            settings = settings or self.current_settings()
+            glossary = (
+                load_glossary(settings.glossary_path) if settings.olheiro_dataset else self.glossary
+            )
+            yield AgentDeps(cursor, glossary)
         finally:
             cursor.close()
+
+    def current_settings(self) -> Settings:
+        return (
+            self.settings.for_dataset(self.settings.olheiro_dataset)
+            if self.settings.olheiro_dataset is not None
+            else self.settings
+        )
 
 
 def analyze(question: str, state: ServerState, use_cache: bool) -> AnalysisResult:
     """Executa no worker síncrono do SDK; nunca chama run_sync dentro do loop assíncrono."""
-    with state.dependencies() as deps:
+    settings = state.current_settings()
+    with state.dependencies(settings) as deps:
+        cache = (
+            AnswerCache(settings.answer_cache_path, cache_revision(settings, state.data_revision))
+            if settings.olheiro_dataset
+            else state.cache
+        )
+        cache.file = state.cache.file
         try:
             with tracked(state.runs, question, "mcp") as run:
-                cached = state.cache.lookup(question, deps.con) if use_cache else None
+                cached = cache.lookup(question, deps.con) if use_cache else None
                 if cached is not None:
                     return AnalysisResult.from_report(run.finish(cached))
                 # Construção tardia: SQL, recursos e respostas do cache funcionam sem chave.
@@ -105,7 +125,7 @@ def analyze(question: str, state: ServerState, use_cache: bool) -> AnalysisResul
                         "Para salvar com aprovação humana, use o app ou olheiro-ask."
                     )
                 if use_cache and outcome.output.answerable:
-                    state.cache.store(question, outcome)
+                    cache.store(question, outcome)
                 result = AnalysisResult.from_report(outcome)
                 run.finish(outcome)
                 return result
@@ -125,12 +145,14 @@ def create_server(settings: Settings | None = None) -> MCPServer[ServerState]:
         con = connect_agent(config.duckdb_path, config.workspace_path)
         try:
             setup_tracing(config)
+            revision = database_revision(config)
             state = ServerState(
                 config,
                 con,
                 glossary,
-                AnswerCache(config.answer_cache_path, cache_revision(config)),
+                AnswerCache(config.answer_cache_path, cache_revision(config, revision)),
                 RunLog(config.runs_path),
+                revision,
             )
             yield state
         finally:
@@ -168,6 +190,37 @@ def create_server(settings: Settings | None = None) -> MCPServer[ServerState]:
             raise ToolError(describe_db_error(error)) from error
 
     @server.tool(
+        annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+    )
+    def read_semantics(
+        ctx: Context[ServerState], table: str = "", column: str = "", offset: int = 0
+    ) -> str:
+        """Lê descrições completas ou regras por página, sem Gemini."""
+        with ctx.request_context.lifespan_context.dependencies() as deps:
+            try:
+                return semantic.read_semantics(deps.glossary, table, column, offset)
+            except ValueError as error:
+                raise ToolError(str(error)) from error
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    def discover_tables(ctx: Context[ServerState], search: str = "", offset: int = 0) -> str:
+        """Busca tabelas por nome, coluna e descrição; até vinte por página, sem Gemini."""
+        with ctx.request_context.lifespan_context.dependencies() as deps:
+            try:
+                return semantic.discover_tables(deps.glossary, deps.con, search, offset)
+            except ValueError as error:
+                raise ToolError(str(error)) from error
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False))
+    def describe_table(ctx: Context[ServerState], table: str, offset: int = 0) -> str:
+        """Lê nomes, tipos e descrições das colunas de uma tabela por página, sem Gemini."""
+        with ctx.request_context.lifespan_context.dependencies() as deps:
+            try:
+                return semantic.describe_table(deps.glossary, deps.con, table, offset)
+            except ValueError as error:
+                raise ToolError(str(error)) from error
+
+    @server.tool(
         name="profile_column",
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
     )
@@ -203,7 +256,7 @@ def create_server(settings: Settings | None = None) -> MCPServer[ServerState]:
         if state is None:
             raise RuntimeError("Servidor ainda não iniciado.")
         with state.dependencies() as deps:
-            return render_context(state.glossary, deps.con)
+            return render_context(deps.glossary, deps.con)
 
     @server.prompt()
     def analyze_data(question: str) -> str:

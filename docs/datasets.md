@@ -1,4 +1,4 @@
-# Analisar outras bases — Fase 9A
+# Analisar outras bases — Fases 9A e 9B
 
 O motor do Olheiro analisa dados tabulares de diferentes domínios. Nesta etapa, as fontes
 suportadas são **arquivos locais CSV e Parquet**: um arquivo vira uma tabela no schema `raw`.
@@ -15,6 +15,9 @@ Abra http://localhost:8501, entre em **Dados → Importar outra base (CSV ou Par
 um ou mais arquivos. Informe um nome e um identificador único, como `vendas_loja`. Ao concluir,
 o app seleciona a base importada. A barra lateral permite voltar ao exemplo ou trocar de base.
 Esse fluxo fica disponível no modo pessoal. A demo mantém sua base fixa e não oferece upload.
+Na F9B, clique **Conferir prévia** antes de **Importar base**. Ajuste leitura e tipos,
+preserve identificadores como texto e confira novamente se fizer alterações.
+O [guia de qualidade e semântica](qualidade.md) detalha o fluxo e as opções do terminal.
 
 O limite padrão é **50 MB no total por importação**, configurável por `OLHEIRO_IMPORT_MAX_MB`.
 O proxy Docker aceita corpos HTTP de até 64 MB; se aumentar o limite do app, ajuste também
@@ -66,9 +69,9 @@ de nomes preserva as tabelas anteriores. O workspace não é recriado.
 
 ## Tipos, nomes e semântica
 
-- CSV: detecção de separador, cabeçalho e tipos; a inferência considera todo o arquivo
-  (`sample_size=-1`). UTF-8 é o caminho testado. Formatos monetários, cabeçalhos ambíguos,
-  identificadores com zeros e outras codificações podem exigir preparação prévia.
+- CSV: detecção automática ou ajuste de separador, cabeçalho, codificação, decimal e tipos.
+  A inferência considera todo o arquivo (`sample_size=-1`). A prévia e a carga definitiva
+  usam as mesmas opções, persistidas em `import.json`. Preserve identificadores como `VARCHAR`.
 - Parquet: usa os tipos registrados no arquivo. Formatos misturados podem participar da mesma
   base e ser cruzados com SQL, depois de verificar chaves e cardinalidade.
 - Nome da tabela: nome do arquivo normalizado; `Vendas 2026.CSV` vira `raw.vendas_2026`.
@@ -83,8 +86,8 @@ explorar os dados sem inventar significados, unidades ou relacionamentos. Descri
 são aceitas. Referências a colunas ou tabelas inexistentes são erros de validação.
 
 Para incluir regras, passe `--glossary /caminho/glossary.toml` na importação pelo terminal.
-O arquivo é copiado para a base. O upload na interface importa os dados sem glossário;
-edição assistida da semântica fica para a próxima etapa. Exemplo:
+O arquivo é copiado para a base. Após importar pela interface ou pelo terminal, o editor
+**Editar descrições e regras** permite documentar a base pessoal, incluindo unidades. Exemplo:
 
 ```toml
 rules = ["Cada linha de pedidos representa um pedido; valor está em reais."]
@@ -103,7 +106,8 @@ No Docker, o padrão é `/state/datasets`, dentro do volume persistente.
 |---|---|
 | `dataset.toml` | Versão do manifesto, nome visível e presença de glossário |
 | `raw/` e `source.duckdb` | Cópias das entradas e tabelas materializadas |
-| `glossary.toml` | Semântica opcional |
+| `import.json` | Opções de leitura por arquivo, usadas na recarga |
+| `glossary.toml` ou `glossary.<hash>.toml` | Semântica opcional; versões do editor são apontadas pelo manifesto |
 | `workspace.duckdb` | Resultados salvos com aprovação humana |
 | `answer_cache.json` e `dashboard.json` | Estado da base |
 | `runs.jsonl` e `exports/` | Registro de execuções e gráficos da base |
