@@ -336,6 +336,22 @@ data/exports/               exportações do agente (ignorado no Git)
   `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`, `uv build`.
   Próxima etapa funcional sugerida continua **F9B: qualidade e semântica dos dados**.
 
+- [x] **Revisão corretiva antes da F9B (03/11/2026).** Varredura solicitada pelo autor;
+  baseline de 198 testes. Corrigidos cache que confundia filtros/códigos, SELECT com mutação
+  de sequência sem aprovação, falso positivo dos avaliadores por comparação de colunas
+  isoladas, erros de perfil que interrompiam ferramenta/página, CLI que exigia chave mesmo
+  com cache e rejeição indevida de schemas/CTEs por caixa. Chaves conservam sinais, caixa,
+  acentos e espaços internos; entradas antigas são reindexadas pela pergunta original.
+  **228 testes offline**, também em cópia temporária sem `.env` e sem chaves; Ruff
+  lint/format, mypy (31 módulos), diagnóstico local e build offline wheel/sdist aprovados.
+  Sem chamadas ao Gemini ou push; Docker não instalado, validação do contêiner pela CI
+  após liberação do autor. Relatório e critérios da próxima fase em
+  `docs/auditoria-2026-11-03.md`. **F9B permanece a próxima fase funcional, não implementada
+  nesta revisão, que priorizou os erros encontrados.**
+  Rodar: `uv run --locked analisia`. Testar: `uv run --locked pytest -q`,
+  `uv run --locked ruff check .`, `uv run --locked ruff format --check .`,
+  `uv run --locked mypy`, `uv build --offline`, `uv run --locked olheiro-check`.
+
 ## Pendências / em aberto
 - **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB
   recomenda isolamento de SO/contêiner). Para deploy (F8): rodar em contêiner sem rede de saída

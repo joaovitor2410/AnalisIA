@@ -136,16 +136,93 @@ def evidence_matches(golden: QueryResult, got: QueryResult) -> tuple[bool, str]:
     """Execução equivalente: mesmo número de linhas e cada coluna do gabarito presente.
 
     Colunas extras do agente são aceitas (ex.: ele mostrou também os pontos); nomes de coluna
-    e ordem das linhas não importam.
+    e ordem das linhas não importam. Cada coluna tem um correspondente distinto e os valores
+    precisam continuar associados à mesma linha, inclusive nas conversões de porcentagem.
     """
     if len(got.rows) != len(golden.rows):
         return False, f"{len(got.rows)} linhas; o gabarito tem {len(golden.rows)}"
+    if len(got.columns) < len(golden.columns):
+        return False, "menos colunas que o gabarito"
+    candidates: list[list[tuple[int, float]]] = []
     for index, name in enumerate(golden.columns):
         expected = [row[index] for row in golden.rows]
-        got_columns = ([row[i] for row in got.rows] for i in range(len(got.columns)))
-        if not any(same_values(expected, column) for column in got_columns):
+        options: list[tuple[int, float]] = []
+        for column_index in range(len(got.columns)):
+            column = [row[column_index] for row in got.rows]
+            expected_numbers, got_numbers = all_numbers(expected), all_numbers(column)
+            if expected_numbers is not None and got_numbers is not None:
+                for scale in (1, 100, 0.01):
+                    if all(
+                        close(a, b)
+                        for a, b in zip(
+                            sorted(expected_numbers),
+                            sorted(number * scale for number in got_numbers),
+                            strict=True,
+                        )
+                    ):
+                        options.append((column_index, scale))
+            elif same_values(expected, column):
+                options.append((column_index, 1))
+        if not options:
             return False, f"nenhuma coluna com os valores de '{name}': {expected[:5]}"
+        candidates.append(options)
+
+    def match_columns(mapping: list[tuple[int, float]]) -> bool:
+        if not matching_rows(golden, got, mapping):
+            return False
+        if len(mapping) == len(candidates):
+            return True
+        used = {index for index, _ in mapping}
+        return any(
+            match_columns([*mapping, option])
+            for option in candidates[len(mapping)]
+            if option[0] not in used
+        )
+
+    if not match_columns([]):
+        return False, "valores isolados coincidem, mas as linhas não correspondem ao gabarito"
     return True, "resultado equivalente ao gabarito"
+
+
+def matching_rows(golden: QueryResult, got: QueryResult, mapping: list[tuple[int, float]]) -> bool:
+    """Correspondência um a um entre linhas, preservando pares e multiplicidade.
+
+    Ordenar cada coluna separadamente aprovava, por exemplo, totais trocados entre clientes.
+    O emparelhamento também lida com valores repetidos e tolerâncias numéricas sobrepostas.
+    """
+
+    def same_cell(expected: object, actual: object, scale: float) -> bool:
+        if expected is None or actual is None:
+            return expected is actual
+        expected_number, actual_number = as_number(expected), as_number(actual)
+        if expected_number is not None and actual_number is not None:
+            return close(expected_number, actual_number * scale)
+        return plain(str(expected)) == plain(str(actual))
+
+    edges = [
+        [
+            index
+            for index, actual in enumerate(got.rows)
+            if all(
+                same_cell(expected[column], actual[other], scale)
+                for column, (other, scale) in enumerate(mapping)
+            )
+        ]
+        for expected in golden.rows
+    ]
+    owners: dict[int, int] = {}
+
+    def assign(row: int, seen: set[int]) -> bool:
+        for candidate in edges[row]:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            if candidate not in owners or assign(owners[candidate], seen):
+                owners[candidate] = row
+                return True
+        return False
+
+    return all(assign(row, set()) for row in range(len(golden.rows)))
 
 
 # --- ancoragem dos números -----------------------------------------------------------------

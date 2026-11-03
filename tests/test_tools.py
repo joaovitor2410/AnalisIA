@@ -6,7 +6,8 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from olheiro.db import connect, connect_agent
+from olheiro import tools
+from olheiro.db import connect, connect_agent, scalar
 from olheiro.tools import (
     describe_schema,
     format_markdown_table,
@@ -84,6 +85,17 @@ def test_profile_column_rejects_unknown_column(con: duckdb.DuckDBPyConnection) -
     assert "não existe" in output["error"]
 
 
+@pytest.mark.parametrize("error", [duckdb.InterruptException(), duckdb.OutOfMemoryException()])
+def test_profile_column_reports_database_failures_to_the_model(
+    con: duckdb.DuckDBPyConnection, monkeypatch: pytest.MonkeyPatch, error: duckdb.Error
+) -> None:
+    def fail(*args: object, **kwargs: object) -> None:
+        raise error
+
+    monkeypatch.setattr(tools, "query_rows", fail)
+    assert profile_column(con, "jogos", "time") == {"error": tools.describe_db_error(error)}
+
+
 def test_slow_query_is_interrupted(con: duckdb.DuckDBPyConnection) -> None:
     with pytest.raises(duckdb.InterruptException):
         query_rows(con, HEAVY_QUERY, timeout=0.2)
@@ -102,6 +114,17 @@ def agent_con(tmp_path: Path) -> Iterator[duckdb.DuckDBPyConnection]:
 def test_save_result_creates_workspace_table(agent_con: duckdb.DuckDBPyConnection) -> None:
     output = save_result(agent_con, "pares", "SELECT id FROM raw.jogos WHERE id % 2 = 0 -- x")
     assert output == {"result": "Tabela workspace.pares criada com 2 linhas."}
+
+
+def test_read_queries_cannot_advance_workspace_sequences(
+    agent_con: duckdb.DuckDBPyConnection,
+) -> None:
+    agent_con.execute("CREATE SEQUENCE workspace.seq")
+    assert "Consulta recusada" in run_sql(agent_con, "SELECT nextval('workspace.seq')")["error"]
+    assert (
+        scalar(agent_con, "SELECT last_value FROM duckdb_sequences() WHERE sequence_name='seq'")
+        is None
+    )
 
 
 @pytest.mark.parametrize(

@@ -12,7 +12,7 @@ from olheiro.config import Settings
 from olheiro.datasets import import_dataset
 from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG, quote_identifier, scalar
 from olheiro.semantic import Glossary, column_doc, columns_by_table
-from olheiro.tools import column_profile, query_rows
+from olheiro.tools import column_profile, describe_db_error, query_rows
 from olheiro.ui.components import show_table
 from olheiro.ui.presentation import context_strip, page_intro
 from olheiro.ui.resources import load_resources, session_deps
@@ -42,7 +42,10 @@ def data_page() -> None:
     tabs = st.tabs([f"{RAW_SCHEMA}.{name}" for name in tables] + ["Regras de negócio", "Workspace"])
     for tab, (table, columns) in zip(tabs, tables.items(), strict=False):
         with tab:
-            show_table_overview(con, glossary, table, columns)
+            try:
+                show_table_overview(con, glossary, table, columns)
+            except duckdb.Error as error:
+                st.error(describe_db_error(error))
     with tabs[-2]:
         if glossary.rules:
             st.markdown("\n".join(f"- {rule}" for rule in glossary.rules))

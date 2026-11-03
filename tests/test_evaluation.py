@@ -85,6 +85,32 @@ def test_evidence_matches_accepts_percentage_scale_and_display_rounding() -> Non
     assert not evidence_matches(golden, QueryResult(["a"], [(72.46,)]))[0]
 
 
+def test_evidence_matches_rejects_values_attached_to_the_wrong_entities() -> None:
+    golden = QueryResult(["cliente", "total"], [("A", 10), ("B", 20)])
+    swapped = QueryResult(["cliente", "total"], [("A", 20), ("B", 10)])
+    assert not evidence_matches(golden, swapped)[0]
+    assert evidence_matches(golden, QueryResult(["valor", "nome"], [(20, "B"), (10, "A")]))[0]
+
+
+def test_evidence_matches_preserves_duplicate_rows_and_column_multiplicity() -> None:
+    golden = QueryResult(["cliente", "total"], [("A", 10), ("A", 10), ("B", 20)])
+    wrong = QueryResult(["cliente", "total"], [("A", 10), ("A", 20), ("B", 10)])
+    assert not evidence_matches(golden, wrong)[0]
+    repeated = QueryResult(["a", "b"], [(1, 1), (2, 2)])
+    assert not evidence_matches(repeated, QueryResult(["x"], [(1,), (2,)]))[0]
+    assert not evidence_matches(repeated, QueryResult(["x", "y"], [(1, 5), (2, 6)]))[0]
+
+
+def test_evidence_matches_keeps_percentages_paired_with_entities() -> None:
+    golden = QueryResult(["nome", "percentual"], [("A", 78.95), ("B", 50.0)])
+    assert evidence_matches(golden, QueryResult(["p", "n"], [(0.5, "B"), (0.789473, "A")]))[0]
+    assert not evidence_matches(golden, QueryResult(["p", "n"], [(0.789473, "B"), (0.5, "A")]))[0]
+
+
+def test_evidence_matches_distinguishes_nulls_from_text() -> None:
+    assert not evidence_matches(QueryResult(["x"], [(None,)]), QueryResult(["y"], [("None",)]))[0]
+
+
 def test_grounding_flags_numbers_missing_from_the_evidence() -> None:
     output = EvalOutput(
         answerable=True,

@@ -14,6 +14,9 @@ from olheiro.sql_guard import UnsafeQueryError, check_query
         "SELECT team, RANK() OVER (ORDER BY goals DESC) AS r FROM raw.brasileirao QUALIFY r = 1",
         "SELECT * FROM workspace.campeoes",
         "SELECT b.team, t.region FROM raw.brasileirao b LEFT JOIN raw.teams t USING (team)",
+        "SELECT * FROM RAW.teams",
+        "WITH Campeoes AS (SELECT * FROM raw.brasileirao) SELECT * FROM CAMPEOES",
+        "SELECT 'nextval' AS name FROM raw.teams",
     ],
 )
 def test_accepts_read_only_queries_on_allowed_tables(sql: str) -> None:
@@ -36,6 +39,13 @@ def test_accepts_read_only_queries_on_allowed_tables(sql: str) -> None:
         ("SELECT * FROM information_schema.tables", "não permitida"),
         ("SELECT * FROM brasileirao", "não permitida"),
         ("SELEC 1", "SQL inválido"),
+        ("SELECT 1 INTO workspace.nova", "SELECT INTO"),
+        ("SELECT nextval('workspace.seq')", "altera estado"),
+        ("SELECT pg_catalog.NEXTVAL('workspace.seq')", "altera estado"),
+        ("WITH c AS (SELECT nextval('workspace.seq')) SELECT * FROM c", "altera estado"),
+        ("SELECT setval('workspace.seq', 5)", "altera estado"),
+        ("SELECT setseed(0.5)", "altera estado"),
+        ("SELECT write_log('texto')", "altera estado"),
     ],
 )
 def test_rejects_unsafe_queries_with_a_reason(sql: str, reason: str) -> None:

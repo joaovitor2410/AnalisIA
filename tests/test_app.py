@@ -3,6 +3,7 @@
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
+import duckdb
 import pytest
 import streamlit as st
 from pydantic_ai import models
@@ -104,6 +105,25 @@ def test_data_page_shows_tables_glossary_and_profile(app_env: Path) -> None:
     assert app.selectbox(key="profile-brasileirao").value == "season"
 
 
+def test_data_page_reports_profile_timeout_without_breaking_other_tabs(
+    app_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from olheiro.ui import data_page
+
+    original = data_page.column_profile
+
+    def profile(con: duckdb.DuckDBPyConnection, table: str, column: str) -> object:
+        if table == "brasileirao":
+            raise duckdb.InterruptException()
+        return original(con, table, column)
+
+    monkeypatch.setattr(data_page, "column_profile", profile)
+    app = page_app(run_data_page).run()
+    assert not app.exception
+    assert "interrompida" in app.error[0].value
+    assert app.selectbox(key="profile-teams").value == "team"
+
+
 def test_workspace_conflict_has_a_clear_message_and_recovers_on_retry(
     app_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -129,7 +149,7 @@ def test_cached_question_is_answered_without_the_model(app_env: Path) -> None:
     app = page_app(run_ask_page).run()
     assert app.pills(key="example").options == [CACHED_QUESTION]  # vira atalho
 
-    app.chat_input[0].set_value("qual time tem mais TITULOS").run()  # normalização da chave
+    app.chat_input[0].set_value(f"  {CACHED_QUESTION}  ").run()
 
     assert not app.exception
     assert app.metric[0].value == "4"  # KPI reexecutado no banco

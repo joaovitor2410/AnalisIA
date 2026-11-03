@@ -157,6 +157,8 @@ def profile_column(con: duckdb.DuckDBPyConnection, table: str, column: str) -> d
         profile = column_profile(con, table, column)
     except ValueError as error:
         return {"error": str(error)}
+    except duckdb.Error as error:
+        return {"error": describe_db_error(error)}
     return {
         "result": f"Tipo: {profile.data_type}\n{profile.stats.to_markdown()}\n\n"
         f"Valores por frequência:\n{profile.top_values.to_markdown()}"

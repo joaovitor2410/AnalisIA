@@ -14,6 +14,8 @@ from sqlglot.errors import ParseError
 from olheiro.db import RAW_SCHEMA, WORKSPACE_CATALOG
 
 ALLOWED_SCHEMAS = frozenset({RAW_SCHEMA, WORKSPACE_CATALOG})
+# SELECT também pode ter efeitos de escrita. Não expor mutação de sequência/estado/logs.
+MUTATING_FUNCTIONS = frozenset({"nextval", "setval", "setseed", "write_log"})
 
 
 class UnsafeQueryError(ValueError):
@@ -37,7 +39,13 @@ def check_query(sql: str) -> exp.Query:
         raise UnsafeQueryError(
             f"Só consultas de leitura (SELECT) são permitidas; recebido: {query.key.upper()}."
         )
-    cte_names = {cte.alias_or_name for cte in query.find_all(exp.CTE)}
+    if query.find(exp.Into) is not None:
+        raise UnsafeQueryError("Só consultas de leitura são permitidas; SELECT INTO grava dados.")
+    for function in query.find_all(exp.Func):
+        name = function.name if isinstance(function, exp.Anonymous) else function.sql_name()
+        if name.casefold() in MUTATING_FUNCTIONS:
+            raise UnsafeQueryError(f"Função '{name}' altera estado; só leitura é permitida.")
+    cte_names = {cte.alias_or_name.casefold() for cte in query.find_all(exp.CTE)}
     for table in query.find_all(exp.Table):
         check_table(table, cte_names)
     return query
@@ -48,7 +56,9 @@ def check_table(table: exp.Table, cte_names: set[str]) -> None:
         raise UnsafeQueryError("Funções de tabela (ex.: read_csv) não são permitidas.")
     if table.catalog:
         raise UnsafeQueryError(f"Use schema.tabela, sem catálogo: '{table.sql()}'.")
-    if table.db in ALLOWED_SCHEMAS or (not table.db and table.name in cte_names):
+    if table.db.casefold() in ALLOWED_SCHEMAS or (
+        not table.db and table.name.casefold() in cte_names
+    ):
         return
     raise UnsafeQueryError(
         f"Tabela '{table.sql()}' não permitida: use tabelas de raw ou workspace (ex.: raw.teams)."

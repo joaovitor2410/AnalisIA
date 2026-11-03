@@ -39,20 +39,59 @@ def report(con: duckdb.DuckDBPyConnection, sql: str | None = SQL) -> AgentReport
     return build_report(output, con, "gemini-teste", RunUsage(requests=3), [])
 
 
-def test_normalize_question_ignores_case_accents_and_punctuation() -> None:
-    assert normalize_question("  Quem foi o CAMPEÃO de 2019?! ") == "quem foi o campeao de 2019"
+def test_normalize_question_preserves_content_and_canonicalizes_unicode() -> None:
+    assert normalize_question("  Quem foi o CAMPEÃO de 2019?! ") == "Quem foi o CAMPEÃO de 2019?!"
+    assert normalize_question("cafe\u0301") == normalize_question("café")
 
 
 def test_cache_hit_reexecutes_the_sql_now(con: duckdb.DuckDBPyConnection, tmp_path: Path) -> None:
     cache = AnswerCache(tmp_path / "cache.json")
     cache.store("Campeões?", report(con))
 
-    hit = cache.lookup("campeoes", con)
+    hit = cache.lookup("  Campeões?  ", con)
 
     assert hit is not None and hit.from_cache
     assert hit.usage.requests == 0  # nenhuma requisição ao modelo
     assert hit.evidence is not None and hit.evidence.rows == [(2019, 90), (2020, 71)]
     assert cache.questions() == ["Campeões?"]
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ("valor > 100", "valor < 100"),
+        ("valor = -10", "valor = 10"),
+        ("código 'AB-12'", "código 'AB+12'"),
+        ("código 'ABC'", "código 'abc'"),
+        ("nome 'avó'", "nome 'avô'"),
+        ("código 'A  B'", "código 'A B'"),
+        ("valor 1.000,50", "valor 1,000.50"),
+        ("nome '東京'", "nome '大阪'"),
+    ],
+)
+def test_cache_never_reuses_answers_for_different_filters(
+    con: duckdb.DuckDBPyConnection, first: str, second: str
+) -> None:
+    cache = AnswerCache(None)
+    cache.store(first, report(con))
+    assert cache.lookup(first, con) is not None
+    assert cache.lookup(second, con) is None
+
+
+def test_legacy_cache_keys_are_rebuilt_from_original_questions(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    path = tmp_path / "cache.json"
+    cache = AnswerCache(path)
+    cache.store("valor > 100", report(con))
+    with cache.file.update() as data:
+        data.answers["valor 100"] = data.answers.pop("valor > 100")
+    original = path.read_bytes()
+    assert cache.lookup("valor < 100", con) is None
+    assert cache.lookup("valor > 100", con) is not None
+    assert path.read_bytes() == original  # a leitura não sobrescreve arquivos do usuário
+    cache.store("valor < 100", report(con))
+    assert set(cache.read().answers) == {"valor > 100", "valor < 100"}
 
 
 def test_cache_entry_with_unsafe_sql_counts_as_a_miss(

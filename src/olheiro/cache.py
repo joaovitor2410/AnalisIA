@@ -2,12 +2,11 @@
 
 Guarda a resposta estruturada (AnalysisAnswer), não a tabela: no acerto, o SQL é validado e
 reexecutado, então os números vêm sempre do banco atual. A chave é a pergunta normalizada
-(sem acento, pontuação ou maiúsculas). Numa demo pública, um cache de exemplos mantém a
-demo funcionando mesmo sem cota.
+(Unicode canônico, sem espaços nas pontas). Filtros, códigos, acentos e caixa são preservados.
+Numa demo pública, um cache de exemplos mantém a demo funcionando mesmo sem cota.
 """
 
 import hashlib
-import re
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -44,9 +43,12 @@ def evidence_hash(evidence: QueryResult | None) -> str:
 
 
 def normalize_question(question: str) -> str:
-    """'Quem foi o Campeão de 2019?' -> 'quem foi o campeao de 2019'."""
-    ascii_text = unicodedata.normalize("NFKD", question).encode("ascii", "ignore").decode()
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", ascii_text.lower()).split())
+    """Normaliza somente diferenças que não alteram filtros nem valores literais.
+
+    Remover pontuação confundia `valor > 100` com `valor < 100`; alterar caixa/acentos
+    também confundiria códigos distintos. Espaços internos podem pertencer a um literal.
+    """
+    return unicodedata.normalize("NFC", question.strip())
 
 
 class AnswerCache:
@@ -56,7 +58,14 @@ class AnswerCache:
 
     def read(self) -> CacheFile:
         cache = self.file.read()
-        return cache if cache.namespace == self.namespace else CacheFile(namespace=self.namespace)
+        if cache.namespace != self.namespace:
+            return CacheFile(namespace=self.namespace)
+        # Recupera a pergunta original de caches antigos, cujas chaves perdiam informação.
+        # Uma resposta só pode ser encontrada pelo conteúdo que a originou.
+        cache.answers = {
+            normalize_question(entry.question): entry for entry in cache.answers.values()
+        }
+        return cache
 
     def questions(self) -> list[str]:
         """Perguntas já respondidas, na forma original: viram os exemplos do app."""
@@ -96,6 +105,9 @@ class AnswerCache:
             if cache.namespace != self.namespace:
                 cache.answers = {}
                 cache.namespace = self.namespace
+            cache.answers = {
+                normalize_question(saved.question): saved for saved in cache.answers.values()
+            }
             cache.answers[normalize_question(question)] = entry
 
 

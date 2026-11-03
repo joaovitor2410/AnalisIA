@@ -77,6 +77,8 @@ por outra pasta ou por um arquivo `.csv`/`.parquet`; `--glossary` é opcional. A
 
 A [auditoria do projeto](docs/auditoria-2026-10-27.md) registra os achados, o estado das fases
 e a sequência proposta: qualidade/semântica, avaliações em outros domínios e contexto de conversa.
+A [revisão de 03/11/2026](docs/auditoria-2026-11-03.md) corrige falhas de cache, validação SQL,
+avaliação da evidência e tratamento de erros, e detalha a próxima etapa F9B.
 
 ## Demo para visitantes
 
@@ -192,6 +194,9 @@ Perguntas são independentes, sem memória de conversa. O cache invalida respost
 revisão dos dados/glossário ou a evidência muda. Dashboard, cache e registros pertencem à base
 no modo pessoal; traces da interface têm destino comum por processo. A demo usa estado por
 sessão, sem persistência entre sessões.
+As chaves do cache preservam sinais, acentos, maiúsculas e espaços internos: perguntas com
+filtros ou códigos diferentes não compartilham respostas. Os atalhos de perguntas prontas
+continuam funcionando sem modelo; a CLI também consulta o cache antes de exigir chave de API.
 Logs ainda não têm rotação.
 DuckDB permanece na linha 1.5; a migração para 2.x requer teste separado dos bancos.
 

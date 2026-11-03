@@ -16,6 +16,7 @@ from pathlib import Path
 import duckdb
 import pydantic_ai
 from pydantic_ai.exceptions import AgentRunError, FallbackExceptionGroup
+from pydantic_ai.models import Model
 
 from olheiro.agent import (
     AgentDeps,
@@ -93,11 +94,6 @@ def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     pydantic_ai.BANNER_ENABLED = False  # a CLI é dona da própria saída
     settings = get_settings()
-    try:
-        model = build_model(settings)
-    except ValueError as error:
-        sys.exit(str(error))
-
     glossary = load_glossary(settings.glossary_path)
     setup_tracing(settings)
     runs = RunLog(settings.runs_path)
@@ -107,18 +103,25 @@ def main(argv: list[str] | None = None) -> None:
         sys.exit(str(error))
     with con:
         deps = AgentDeps(con, glossary)
+        model: Model | None = None
         try:
             with tracked(runs, args.question, "cli") as run:
                 if args.no_cache:
+                    model = build_model(settings)
                     outcome = run.finish(ask(args.question, deps, model))
                 else:
                     cache = AnswerCache(settings.answer_cache_path, cache_revision(settings))
-                    outcome = run.finish(ask_with_cache(args.question, deps, cache, model))
+                    cached = cache.lookup(args.question, con)
+                    if cached is not None:
+                        outcome = run.finish(cached)
+                    else:
+                        model = build_model(settings)
+                        outcome = run.finish(ask_with_cache(args.question, deps, cache, model))
             while isinstance(outcome, PendingApproval):
                 approved = confirm_save(outcome, con)  # o tempo de decisão não entra na medida
                 with tracked(runs, args.question, "cli", phase="resume") as run:
                     outcome = run.finish(resume(outcome, approved, deps, model))
-        except (AgentRunError, FallbackExceptionGroup) as error:
+        except (AgentRunError, FallbackExceptionGroup, ValueError) as error:
             # Falha da API (cota, 503 em todos os modelos) ou modelo que esgotou as retentativas.
             sys.exit(f"Erro ao consultar o modelo. {explain_model_failure(error)}")
 
