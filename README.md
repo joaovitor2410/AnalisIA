@@ -84,7 +84,8 @@ A [revisão de 03/11/2026](docs/auditoria-2026-11-03.md) corrige falhas de cache
 avaliação da evidência e tratamento de erros, e detalha a próxima etapa F9B.
 A **F9B foi implementada**: veja [qualidade e semântica dos dados](docs/qualidade.md) para usar
 prévia, tipos reproduzíveis, diagnósticos e edição das regras. Catálogos grandes têm busca
-seletiva para o agente e o MCP.
+seletiva para o agente e o MCP. A [revisão de 04/11/2026](docs/auditoria-2026-11-04.md)
+validou essa entrega e avançou para avaliações de futebol, vendas e estoque.
 
 ## Demo para visitantes
 
@@ -136,7 +137,9 @@ Detalhes em [docs/deployment.md](docs/deployment.md). A infraestrutura base pass
 [CI com Docker](https://github.com/joaovitor2410/AnalisIA/actions/runs/40365502597).
 A [CI da F8B](https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772) passou
 nos cenários pessoal e demo. A [CI da auditoria e F9A/F9A.1](https://github.com/joaovitor2410/AnalisIA/actions/runs/41632724779)
-também passou após o push de 03/11. A nova imagem da F9B aguarda seu próprio push e CI.
+também passou após o push de 03/11. A [CI da F9B](https://github.com/joaovitor2410/AnalisIA/actions/runs/41637039752)
+passou em 03/11, incluindo qualidade e contêineres pessoal/demo. A ampliação das avaliações
+de 04/11 foi validada localmente; sua CI depende de novo push autorizado.
 
 ## Arquitetura
 
@@ -187,15 +190,26 @@ ou desligados; o arquivo local alimenta a página Operação.
 
 ## Avaliações e limites
 
-Há 39 casos com gabaritos SQL em sete categorias e avaliadores determinísticos. A rodada
-comparativa com modelos reais aguarda ativação do faturamento pelo autor.
+Há **59 casos em três suítes**: Brasileirão (39), vendas (10) e estoque (10), com **44
+gabaritos SQL** e avaliadores determinísticos. Os demais casos verificam recusas e segurança.
+Cada suíte materializa seus arquivos versionados em banco temporário, com workspace
+descartável, sem abrir a base pessoal selecionada. Valide sem chave nem chamada ao modelo:
 
 ```bash
-uv run olheiro-eval --model google:gemini-3.8-flash
+uv run --locked olheiro-eval --suite brasileirao --validate-only
+uv run --locked olheiro-eval --suite vendas --validate-only
+uv run --locked olheiro-eval --suite estoque --validate-only
+```
+
+A rodada comparativa com modelos reais aguarda ativação do faturamento e liberação do autor.
+
+```bash
+uv run olheiro-eval --suite vendas --model google:gemini-3.8-flash
 ```
 
 O comando apresenta estimativa e pede confirmação de custo. Testes com modelo falso não
-substituem a rodada real.
+substituem a rodada real. Resultados são separados por suíte/modelo e incluem a revisão dos
+arquivos usados. O [guia de avaliações](docs/avaliacoes.md) detalha casos, execução e limites.
 
 Perguntas são independentes, sem memória de conversa. O cache invalida respostas quando a
 revisão dos dados/glossário ou a evidência muda. Dashboard, cache e registros pertencem à base

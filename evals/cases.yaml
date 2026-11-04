@@ -104,7 +104,8 @@ cases:
                golden_sql: "SELECT t.state, count(*) FROM raw.brasileirao b JOIN raw.teams t USING (team) WHERE b.place = 1 GROUP BY t.state"}
   - name: titulos_nordeste
     inputs: Quantos títulos os times do Nordeste conquistaram desde 2003?
-    metadata: {category: juncao, expect: answer, mentions: ["nenhum|zero|0 titulo|0 conquista"]}
+    metadata: {category: juncao, expect: answer, mentions: ["nenhum|zero|0 titulo|0 conquista"],
+               golden_sql: "SELECT count(*) FROM raw.brasileirao b JOIN raw.teams t USING (team) WHERE b.place = 1 AND t.region = 'Northeast'"}
   - name: nordestinos_2019
     inputs: Quais times do Nordeste disputaram o Brasileirão de 2019?
     metadata: {category: juncao, expect: answer, mentions: [Bahia, CSA, Ceará, Fortaleza],

@@ -1,0 +1,5 @@
+sku,product_name,unit_cost,min_stock,supplier_id
+001,Caderno,10.00,15,10
+01,Caneta,20.00,2,10
+1,Lápis,5.00,3,20
+002,Borracha,8.00,1,30

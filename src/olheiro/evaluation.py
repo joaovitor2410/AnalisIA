@@ -7,13 +7,13 @@ Sem LLM-juiz (que gastaria cota e teria o próprio erro): cada nota é calculada
 - ancoragem:     fração dos números da resposta/insights que aparecem na evidência.
 Cada caso roda o agente sem cache e sem fallback, para medir o modelo puro.
 
-Comando: olheiro-eval --model google:gemini-3.8-flash [--limit N] [--category C] [--yes]
+Comando: olheiro-eval --suite vendas --validate-only (offline)
+Rodada real: olheiro-eval --suite vendas --model google:gemini-3.8-flash
 """
 
 import argparse
 import re
 import sys
-import tempfile
 import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -32,11 +32,13 @@ from pydantic_evals.evaluators import EvaluationReason, Evaluator, EvaluatorCont
 from pydantic_evals.reporting import EvaluationReport
 
 from olheiro.agent import LAST_MODEL_RETRIES, AgentDeps, PendingApproval, ask, google_model, resume
-from olheiro.config import PROJECT_ROOT, get_settings
-from olheiro.db import RAW_SCHEMA, connect_agent, scalar, session_cursor
+from olheiro.config import PROJECT_ROOT, Settings
+from olheiro.db import RAW_SCHEMA, quote_identifier, scalar, session_cursor
 from olheiro.errors import explain_model_failure
+from olheiro.eval_suites import SUITES, suite_database
 from olheiro.pricing import cost_usd
-from olheiro.semantic import Glossary, load_glossary
+from olheiro.semantic import Glossary
+from olheiro.sql_guard import check_query
 from olheiro.telemetry import RunLog, tracked
 from olheiro.tools import QueryResult, query_rows
 from olheiro.tracing import setup_tracing
@@ -46,9 +48,6 @@ RESULTS_DIR = PROJECT_ROOT / "evals" / "results"
 
 # Média medida nos testes reais das fases 2–4, usada só para a estimativa antes de rodar.
 ESTIMATED_TOKENS_PER_CASE = (10_000, 2_000)
-
-# Anos do período não precisam estar na evidência: são contexto, não resultado.
-SEASON_RANGE = range(2003, 2025)
 
 
 class CaseMeta(BaseModel):
@@ -247,11 +246,21 @@ def numbers_in(text: str) -> list[str]:
 
 
 def grounding(output: EvalOutput, question: str) -> tuple[float, list[str]]:
-    """Fração dos números citados que existem na evidência (ou na pergunta, ou são anos)."""
+    """Fração dos números citados presentes na evidência ou na pergunta, em qualquer domínio."""
     evidence_numbers = [
         number for row in output.rows for value in row if (number := as_number(value)) is not None
     ]
     pool = [n * scale for n in evidence_numbers for scale in (1, 100, 0.01)]
+    # Datas serializadas e códigos textuais também podem sustentar números na resposta.
+    pool += [
+        candidate
+        for row in output.rows
+        for value in row
+        if isinstance(value, str)
+        and re.fullmatch(r"\d+(?:[.,]\d+)*|\d{4}-\d{2}-\d{2}(?:[ T].*)?", value)
+        for token in numbers_in(value)
+        for candidate in number_candidates(token)
+    ]
     pool.append(float(len(output.rows)))
     pool += [c for token in numbers_in(question) for c in number_candidates(token)]
 
@@ -260,9 +269,7 @@ def grounding(output: EvalOutput, question: str) -> tuple[float, list[str]]:
         token
         for token in tokens
         if not any(
-            (candidate.is_integer() and int(candidate) in SEASON_RANGE)
-            or any(close(candidate, known) for known in pool)
-            for candidate in number_candidates(token)
+            any(close(candidate, known) for known in pool) for candidate in number_candidates(token)
         )
     ]
     score = 1.0 if not tokens else (len(tokens) - len(missing)) / len(tokens)
@@ -348,7 +355,10 @@ def raw_row_count(con: duckdb.DuckDBPyConnection) -> int:
     tables = con.execute(
         "SELECT table_name FROM duckdb_tables() WHERE schema_name = ?", [RAW_SCHEMA]
     ).fetchall()
-    return sum(scalar(con, f'SELECT count(*) FROM {RAW_SCHEMA}."{name}"') for (name,) in tables)
+    return sum(
+        scalar(con, f"SELECT count(*) FROM {RAW_SCHEMA}.{quote_identifier(name)}")
+        for (name,) in tables
+    )
 
 
 def make_task(
@@ -362,7 +372,11 @@ def make_task(
     """A tarefa avaliada: uma pergunta ao agente, com gravações recusadas automaticamente."""
 
     def run_case(question: str) -> EvalOutput:
-        deps = AgentDeps(session_cursor(con), glossary)
+        with session_cursor(con) as cursor:
+            return run_with_cursor(question, cursor)
+
+    def run_with_cursor(question: str, cursor: duckdb.DuckDBPyConnection) -> EvalOutput:
+        deps = AgentDeps(cursor, glossary)
         rows_before = raw_row_count(deps.con)
         save_requested = False
         try:
@@ -402,11 +416,25 @@ def make_task(
 
 
 def golden_results(dataset: EvalDataset, con: duckdb.DuckDBPyConnection) -> dict[str, QueryResult]:
-    return {
-        case.name: query_rows(con, case.metadata.golden_sql)
-        for case in dataset.cases
-        if case.name and case.metadata and case.metadata.golden_sql
-    }
+    """Valida os casos e o SQL antes de consumir cota; evidência truncada não serve de gabarito."""
+    results = {}
+    names: set[str] = set()
+    for case in dataset.cases:
+        if not case.name or case.name in names:
+            raise ValueError("Cada caso precisa ter um nome único e não vazio.")
+        names.add(case.name)
+        metadata = meta(case.metadata)
+        if metadata.expect == "answer" and not metadata.golden_sql:
+            raise ValueError(f"{case.name}: resposta esperada sem gabarito SQL.")
+        if metadata.expect != "answer" and metadata.golden_sql:
+            raise ValueError(f"{case.name}: recusa/segurança não deve ter gabarito SQL.")
+        if metadata.golden_sql:
+            check_query(metadata.golden_sql)
+            result = query_rows(con, metadata.golden_sql, max_rows=51)
+            if len(result.rows) > 50:
+                raise ValueError(f"{case.name}: gabarito excede o limite de 50 linhas do agente.")
+            results[case.name] = result
+    return results
 
 
 def select_cases(dataset: EvalDataset, category: str | None, limit: int | None) -> EvalDataset:
@@ -455,6 +483,8 @@ class RunSummary(BaseModel):
     model: str
     run_date: date
     cases: list[CaseResult]
+    suite: str = "brasileirao"
+    suite_revision: str | None = None
 
     def rate(self, check: str, category: str | None = None) -> float | None:
         values = [
@@ -465,7 +495,12 @@ class RunSummary(BaseModel):
         return sum(values) / len(values) if values else None
 
 
-def summarize(report: EvaluationReport[str, EvalOutput, CaseMeta], model_id: str) -> RunSummary:
+def summarize(
+    report: EvaluationReport[str, EvalOutput, CaseMeta],
+    model_id: str,
+    suite: str = "brasileirao",
+    suite_revision: str | None = None,
+) -> RunSummary:
     results = []
     for case in report.cases:
         cost = case.metrics.get("custo_usd")
@@ -500,7 +535,13 @@ def summarize(report: EvaluationReport[str, EvalOutput, CaseMeta], model_id: str
                 error=failure.error_message,
             )
         )
-    return RunSummary(model=model_id, run_date=date.today(), cases=results)
+    return RunSummary(
+        model=model_id,
+        run_date=date.today(),
+        cases=results,
+        suite=suite,
+        suite_revision=suite_revision,
+    )
 
 
 def percent(value: float | None) -> str:
@@ -512,7 +553,7 @@ def render_markdown(summaries: Sequence[RunSummary]) -> str:
     lines = [
         "# Resultados das avaliações",
         "",
-        "Gerado por `olheiro-eval`. Casos em `evals/cases.yaml`; avaliadores determinísticos em",
+        "Gerado por `olheiro-eval`. Suítes e casos em `evals/`; avaliadores determinísticos em",
         "`src/olheiro/evaluation.py` (sem LLM-juiz).",
         "",
         "| Métrica | " + " | ".join(f"`{s.model}` ({s.run_date})" for s in summaries) + " |",
@@ -522,6 +563,7 @@ def render_markdown(summaries: Sequence[RunSummary]) -> str:
     def row(label: str, values: Sequence[str]) -> None:
         lines.append(f"| {label} | " + " | ".join(values) + " |")
 
+    row("Suíte", [s.suite for s in summaries])
     row("Casos", [str(len(s.cases)) for s in summaries])
     row("Comportamento correto", [percent(s.rate("comportamento")) for s in summaries])
     row("Evidência = gabarito", [percent(s.rate("evidencia")) for s in summaries])
@@ -560,11 +602,17 @@ def total_cost(summary: RunSummary) -> str:
 def save_summary(summary: RunSummary, results_dir: Path = RESULTS_DIR) -> Path:
     """Grava a rodada (um JSON por modelo) e refaz o README comparativo de todos os modelos."""
     results_dir.mkdir(parents=True, exist_ok=True)
-    path = results_dir / f"{summary.model.replace(':', '_')}.json"
+    # Identificadores de modelo não podem introduzir diretórios no caminho do relatório.
+    suite_dir = results_dir / summary.suite
+    if summary.suite not in SUITES:
+        raise ValueError(f"Suíte desconhecida: {summary.suite}")
+    suite_dir.mkdir(parents=True, exist_ok=True)
+    model_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", summary.model)
+    path = suite_dir / f"{model_name}.json"
     path.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
     summaries = [
         RunSummary.model_validate_json(file.read_text(encoding="utf-8"))
-        for file in sorted(results_dir.glob("*.json"))
+        for file in sorted(results_dir.rglob("*.json"))
     ]
     (results_dir / "README.md").write_text(render_markdown(summaries), encoding="utf-8")
     return path
@@ -576,11 +624,20 @@ def save_summary(summary: RunSummary, results_dir: Path = RESULTS_DIR) -> Path:
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="olheiro-eval", description="Avalia o agente.")
     parser.add_argument("--model", help="ex.: google:gemini-3.5-flash-lite (padrão: o do .env)")
+    parser.add_argument("--suite", choices=SUITES, default="brasileirao", help="domínio avaliado")
+    parser.add_argument(
+        "--validate-only", action="store_true", help="valida dados e gabaritos offline, sem modelo"
+    )
     parser.add_argument("--category", help="roda só uma categoria (ex.: recusa)")
     parser.add_argument("--limit", type=int, help="roda só os N primeiros casos")
     parser.add_argument("--concurrency", type=int, default=2, help="casos em paralelo")
     parser.add_argument("--yes", action="store_true", help="não pede confirmação do custo")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit deve ser positivo.")
+    if args.concurrency < 1:
+        parser.error("--concurrency deve ser positivo.")
+    return args
 
 
 def estimated_cost(model_id: str, cases: int) -> str:
@@ -604,30 +661,34 @@ def secret_value(secret: SecretStr | None) -> str | None:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     pydantic_ai.BANNER_ENABLED = False
-    settings = get_settings()
-    model_id = args.model or settings.olheiro_model
-    dataset = select_cases(load_cases(), args.category, args.limit)
+    suite = SUITES[args.suite]
+    dataset = select_cases(load_cases(suite.cases), args.category, args.limit)
     if not dataset.cases:
         sys.exit("Nenhum caso selecionado.")
 
-    question = f"Rodar {len(dataset.cases)} casos com {model_id}? Custo estimado: "
-    if not args.yes and not confirm(question + estimated_cost(model_id, len(dataset.cases))):
-        sys.exit("Cancelado.")
-    try:
-        model = google_model(model_id, settings.google_api_key, LAST_MODEL_RETRIES)
-    except ValueError as error:
-        sys.exit(str(error))
-    setup_tracing(settings)  # a rodada também gera traces: tempo de cada passo por caso
-
-    # Workspace descartável: numa eval nada deve ser gravado, mas se for, não suja o do usuário.
-    with (
-        tempfile.TemporaryDirectory() as workspace_dir,
-        connect_agent(settings.duckdb_path, Path(workspace_dir) / "workspace.duckdb") as con,
-    ):
+    with suite_database(suite) as (con, glossary):
+        goldens = golden_results(dataset, con)
+        revision = suite.revision()
+        if args.validate_only:
+            print(
+                f"{suite.name}: {len(dataset.cases)} casos e {len(goldens)} gabaritos SQL "
+                f"validados offline. Revisão: {revision}"
+            )
+            return
+        settings = Settings()  # a suíte independe do manifesto pessoal em OLHEIRO_DATASET
+        model_id = args.model or settings.olheiro_model
+        question = f"Rodar {len(dataset.cases)} casos de {suite.name} com {model_id}? Estimativa: "
+        if not args.yes and not confirm(question + estimated_cost(model_id, len(dataset.cases))):
+            sys.exit("Cancelado.")
+        try:
+            model = google_model(model_id, settings.google_api_key, LAST_MODEL_RETRIES)
+        except ValueError as error:
+            sys.exit(str(error))
+        setup_tracing(settings)
         report = evaluate(
             dataset,
             con,
-            load_glossary(settings.glossary_path),
+            glossary,
             model,
             model_id,
             RunLog(settings.runs_path),
@@ -635,5 +696,5 @@ def main(argv: list[str] | None = None) -> None:
             args.concurrency,
         )
     report.print(include_reasons=True, include_averages=True)
-    path = save_summary(summarize(report, model_id))
-    print(f"\nResumo salvo em {path} e {path.parent / 'README.md'}")
+    path = save_summary(summarize(report, model_id, suite.name, revision))
+    print(f"\nResumo salvo em {path} e {RESULTS_DIR / 'README.md'}")

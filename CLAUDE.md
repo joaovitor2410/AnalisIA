@@ -23,6 +23,11 @@ flexível antes da publicação; a auditoria e o próximo roteiro estão em
 `docs/auditoria-2026-10-27.md`.
 Ainda em 27/10, o autor pediu uma renovação visual e definiu o nome **AnalisIA**. A F9A.1
 entrega identidade, navegação e interações; F9B continua reservada a qualidade/semântica.
+Em **04/11/2026**, nova varredura confirmou a F9B e sua CI verde (`0e20330`, execução
+`41637039752`). O autor autorizou avançar se o projeto estivesse apto. Entregue a preparação
+offline da **F5 complementar**, com suítes de futebol, vendas e estoque (59 casos/44
+gabaritos SQL). A rodada paga permanece pendente; **F9C (contexto de conversa)** é a próxima
+fase funcional, após a revisão de fim de fase. Relatório: `docs/auditoria-2026-11-04.md`.
 - Funções: chat analítico com evidência e passos do agente; dashboard (fixar respostas, KPIs);
   explorador de dados; perguntas prontas via cache; importação/seleção de bases pessoais
   CSV/Parquet (F9A). Upload do visitante da demo continua fora do escopo.
@@ -184,6 +189,7 @@ src/olheiro/ui/presentation.py identidade visual, SVG e composição decorativa 
 .streamlit/config.toml      tema nativo (somente esse arquivo da pasta entra no Docker)
 src/olheiro/errors.py       explica falhas do modelo (cota, 503, prazo) em português
 src/olheiro/evaluation.py   evals: tarefa, avaliadores, resumo (comando olheiro-eval)
+src/olheiro/eval_suites.py  fixtures por domínio, revisão e bancos temporários de avaliação
 src/olheiro/pricing.py      preço por modelo e custo equivalente
 src/olheiro/tracing.py      OpenTelemetry: setup, exportador JSONL, leitura de um trace
 src/olheiro/telemetry.py    RunRecord, RunLog e tracked() (registro de execuções)
@@ -203,7 +209,11 @@ docs/interface.md           identidade AnalisIA e fluxos interativos (F9A.1)
 docs/auditoria-2026-10-27.md  achados, etapas concluídas e roteiro priorizado
 examples/datasets/retail/   pedidos/clientes sintéticos e glossário parcial de demonstração
 data/raw/SOURCE.md          fonte Kaggle, condições informadas e hashes dos CSVs
-evals/cases.yaml            39 casos com gabarito em 7 categorias
+evals/cases.yaml            suíte Brasileirão (39 casos, 29 gabaritos SQL)
+evals/vendas.yaml           suíte de vendas (10 casos, 7 gabaritos SQL)
+evals/estoque.yaml          suíte de estoque (10 casos, 8 gabaritos SQL)
+evals/fixtures/inventory/   produtos, saldos, fornecedores, opções e regras sintéticos
+docs/avaliacoes.md         execução offline/real, critérios e limites do benchmark
 evals/results/              resultados por modelo + README comparativo
 learning/manual_loop.py     F1: loop do agente à mão com google-genai (material de estudo)
 tests/                      pytest (pythonpath inclui learning/; conftest isola tracing e logs)
@@ -384,6 +394,32 @@ data/exports/               exportações do agente (ignorado no Git)
   Próximas etapas: F5 complementar (benchmark em outros domínios, rodada paga separada)
   e F9C (contexto de conversa), respeitando a revisão de fim de fase pelo autor.
 
+- [x] **Varredura e F5 complementar offline (04/11/2026).** Baseline de 251 testes,
+  diagnóstico local, Ruff/formatação e mypy sem erros. CI da F9B confirmada no GitHub:
+  https://github.com/joaovitor2410/AnalisIA/actions/runs/41637039752 (SHA `0e20330`, 03/11).
+  README anterior e as notas de fim da F9B estavam desatualizados sobre essa validação.
+  Avaliador agora oferece `--suite brasileirao|vendas|estoque` e `--validate-only` sem ler
+  configurações pessoais/construir modelo. Materializa fixtures versionadas com as opções
+  do produto em banco temporário blindado e workspace descartável. Não avalia os casos de
+  futebol contra `OLHEIRO_DATASET`; logs/traces reais continuam configuráveis.
+  Vinte casos novos: faturamento, cancelamentos, JOINs, IDs com zeros, nulos, órfãos,
+  fornecedores duplicados, reposição, recusa e proteção. Gabaritos checados antes de pedir
+  custo; SQL proibido, nomes inválidos e evidência >50 linhas recusados. Caso antigo de zero
+  títulos do Nordeste ganha SQL. Ancoragem deixa de dispensar números de 2003–2024 e aceita
+  números de datas/códigos presentes na evidência; continua heurística. Cursores fechados
+  explicitamente também em falha. Resumos em `evals/results/<suite>/<modelo>.json`, com
+  suíte e hash de dados/regras/opções/perguntas. Comparativo comum identifica cada suíte.
+  **270 testes offline**, repetidos em cópia sem `.env`/chaves; Ruff lint/format, mypy (39
+  módulos), diagnóstico, validação das três suítes e build offline wheel/sdist aprovados.
+  Sem chamada ao Gemini, dependência nova ou push. Docker ausente no Mac; nova CI após
+  push autorizado. Documentação em `docs/avaliacoes.md` e `docs/auditoria-2026-11-04.md`.
+  Preparação offline concluída; benchmark real não foi executado e não há acurácia medida.
+  Rodar: `uv run --locked analisia`. Testar: `uv run --locked pytest -q`,
+  `uv run --locked ruff check .`, `uv run --locked ruff format --check .`,
+  `uv run --locked mypy`, `uv build --offline`, `uv run --locked olheiro-check`,
+  `uv run --locked olheiro-eval --suite vendas --validate-only` (também estoque/brasileirao).
+  Próxima fase funcional: **F9C**, após revisão do autor. Rodada paga continua separada.
+
 ## Pendências / em aberto
 - **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB
   recomenda isolamento de SO/contêiner). Para deploy (F8): rodar em contêiner sem rede de saída
@@ -397,7 +433,9 @@ data/exports/               exportações do agente (ignorado no Git)
   `OLHEIRO_SESSION_QUESTION_LIMIT` limita só o app Streamlit, não o MCP local. Configuração de
   clientes documentada, sem alterar arquivos do Claude automaticamente.
 - **Para a publicação (F8C):** decidir hospedagem/acesso e condições dos dados; validar a imagem
-  F9B após novo push (auditoria/F9A/F9A.1 já verdes); limites no provedor se habilitar perguntas.
+  desta entrega após novo push (F9B já verde em `41637039752`); limites no provedor se
+  habilitar perguntas. F5 real permanece pendente de faturamento/liberação, embora a
+  preparação offline multidomínio esteja concluída.
   A F8B já prepara exemplos versionados e estado por sessão. O orçamento é por processo:
   reinícios/replicação precisam ser considerados na hospedagem.
 - **Limitações conhecidas:** perguntas independentes (sem memória de conversa: "e em 2020?" não

@@ -119,9 +119,9 @@ def test_grounding_flags_numbers_missing_from_the_evidence() -> None:
         columns=["aproveitamento", "points"],
         rows=[[0.7895, 90]],
     )
-    score, missing = grounding(output, "Qual o aproveitamento do Flamengo?")
+    score, missing = grounding(output, "Qual o aproveitamento do Flamengo em 2019?")
     assert missing == ["30"]
-    assert score == pytest.approx(3 / 4)  # 2019 (ano), 78,95 (escala) e 90 ancorados
+    assert score == pytest.approx(3 / 4)  # 2019 (pergunta), 78,95 (escala) e 90 ancorados
 
 
 Step = Callable[[AgentInfo], ModelResponse]

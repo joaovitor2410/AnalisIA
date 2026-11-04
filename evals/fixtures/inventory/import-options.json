@@ -1,0 +1,6 @@
+{
+  "files": {
+    "products.csv": {"types": {"sku": "VARCHAR", "unit_cost": "DECIMAL(18,2)"}},
+    "stock.csv": {"types": {"sku": "VARCHAR", "quantity": "BIGINT"}}
+  }
+}
