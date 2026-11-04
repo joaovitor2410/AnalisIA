@@ -8,7 +8,7 @@ from pathlib import Path
 import duckdb
 import pytest
 from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExportResult
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic_ai import models
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
@@ -103,6 +103,24 @@ def test_nothing_is_recorded_when_there_is_no_outcome(tmp_path: Path) -> None:
     assert runs.read() == []
 
 
+def test_logging_failure_does_not_mask_the_original_error_or_leak_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    runs = RunLog(tmp_path / "runs.jsonl", include_content=False)
+
+    def fail(record: RunRecord) -> None:
+        raise OSError("erro interno contendo informação privada")
+
+    monkeypatch.setattr(runs.file, "append", fail)
+    with (
+        pytest.raises(RuntimeError, match="erro original"),
+        tracked(runs, "pergunta privada", "app"),
+    ):
+        raise RuntimeError("erro original")
+    assert "não foi possível" in caplog.text.lower()
+    assert "privada" not in caplog.text and "erro original" not in caplog.text
+
+
 def test_file_exporter_round_trip_rebuilds_the_tree(tmp_path: Path) -> None:
     path = tmp_path / "traces.jsonl"
     configure_tracing(SimpleSpanProcessor(JsonLinesSpanExporter(path)), include_content=False)
@@ -126,6 +144,33 @@ def test_json_lines_skips_a_truncated_line(tmp_path: Path) -> None:
     with log.path.open("a", encoding="utf-8") as file:
         file.write('{"at": "2026-10-')  # processo morto no meio da escrita
     assert log.read() == [record]
+
+
+def test_trace_reader_finds_spans_across_retained_files(tmp_path: Path) -> None:
+    memory = InMemorySpanExporter()
+    configure_tracing(SimpleSpanProcessor(memory), include_content=False)
+    with tracer().start_as_current_span("raiz") as root, tracer().start_as_current_span("filho"):
+        pass
+    spans = memory.get_finished_spans()
+    maximum = max(len((span.to_json(indent=None) + "\n").encode()) for span in spans)
+    path = tmp_path / "traces.jsonl"
+    exporter = JsonLinesSpanExporter(path, max_bytes=maximum + 1, backup_count=3)
+    assert exporter.export(spans) == SpanExportResult.SUCCESS
+    assert path.with_name(path.name + ".1").exists()
+    restored = read_trace(path, format(root.get_span_context().trace_id, "032x"))
+    assert [(span.name, span.depth) for span in restored] == [("raiz", 0), ("filho", 1)]
+
+
+def test_oversized_span_fails_export_without_logging_private_attributes(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    memory = InMemorySpanExporter()
+    configure_tracing(SimpleSpanProcessor(memory), include_content=True)
+    with tracer().start_as_current_span("raiz", attributes={"pergunta": "dado privado"}):
+        pass
+    exporter = JsonLinesSpanExporter(tmp_path / "traces.jsonl", max_bytes=10, backup_count=1)
+    assert exporter.export(memory.get_finished_spans()) == SpanExportResult.FAILURE
+    assert "dado privado" not in caplog.text
 
 
 def test_cost_accepts_provider_prefix_and_unknown_models() -> None:

@@ -5,6 +5,7 @@ requisições, tokens e custo equivalente de cada pergunta. O trace_id liga cada
 OpenTelemetry correspondente, para ver o passo a passo.
 """
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,9 +20,10 @@ from pydantic import BaseModel
 from pydantic_ai.messages import RetryPromptPart
 
 from olheiro.agent import AgentReport, PendingApproval
+from olheiro.config import Settings
 from olheiro.errors import explain_model_failure
 from olheiro.pricing import cost_usd
-from olheiro.storage import JsonLines
+from olheiro.storage import DEFAULT_LOG_BACKUP_COUNT, DEFAULT_LOG_MAX_BYTES, JsonLines
 from olheiro.tracing import content_enabled, tracer
 
 type Source = Literal["app", "cli", "eval", "mcp"]
@@ -49,14 +51,36 @@ class RunRecord(BaseModel):
 
 
 class RunLog:
-    def __init__(self, path: Path, *, include_content: bool = True) -> None:
-        self.file = JsonLines(path, RunRecord)
+    def __init__(
+        self,
+        path: Path,
+        *,
+        include_content: bool = True,
+        max_bytes: int = DEFAULT_LOG_MAX_BYTES,
+        backup_count: int = DEFAULT_LOG_BACKUP_COUNT,
+    ) -> None:
+        self.file = JsonLines(path, RunRecord, max_bytes=max_bytes, backup_count=backup_count)
         self.include_content = include_content
+
+    @classmethod
+    def from_settings(cls, settings: Settings, *, include_content: bool = True) -> "RunLog":
+        return cls(
+            settings.runs_path,
+            include_content=include_content,
+            max_bytes=settings.olheiro_log_max_bytes,
+            backup_count=settings.olheiro_log_backup_count,
+        )
 
     def append(self, record: RunRecord) -> None:
         if not self.include_content:
             record = record.model_copy(update={"question": "(conteúdo omitido)", "error": None})
-        self.file.append(record)
+        try:
+            self.file.append(record)
+        except OSError as error:
+            logging.getLogger(__name__).warning(
+                "Não foi possível gravar o registro de execução (%s).",
+                type(error).__name__,
+            )
 
     def read(self) -> list[RunRecord]:
         return self.file.read()

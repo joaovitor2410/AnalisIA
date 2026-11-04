@@ -103,7 +103,7 @@ histórico e novas respostas em cache pertencem à sessão; o workspace pessoal 
 A página Operação fica fora da demo e os registros omitem o conteúdo das perguntas e erros.
 
 Novas perguntas ao modelo exigem `OLHEIRO_DEMO_MODEL_ENABLED=true` e chave de API. Há limite
-por sessão (padrão 5), por processo (padrão 10 tentativas) e por análise (6 requisições
+por sessão (padrão 5), por dia UTC no disco compartilhado (padrão 10 tentativas) e por análise (6 requisições
 contabilizadas pelo agente). Os exemplos continuam disponíveis após os limites.
 Veja [docs/demo.md](docs/demo.md). A demo está preparada para revisão local; a publicação
 continua pendente da escolha de hospedagem e das condições de redistribuição dos dados.
@@ -145,7 +145,8 @@ também passou após o push de 03/11. A [CI da F9B](https://github.com/joaovitor
 passou em 03/11, incluindo qualidade e contêineres pessoal/demo. A ampliação das avaliações
 de 04/11 foi enviada no commit `94f5cca` e sua
 [CI passou](https://github.com/joaovitor2410/AnalisIA/actions/runs/41843227764).
-A F9C tem validação local; a nova imagem depende de seu próprio push e CI.
+A [CI da F9C](https://github.com/joaovitor2410/AnalisIA/actions/runs/41865983452) também passou
+após o push de `071dd2d`. A F8C.1 tem validação local; sua imagem depende de novo push e CI.
 
 ## Arquitetura
 
@@ -228,7 +229,11 @@ sessão, sem persistência entre sessões.
 As chaves do cache preservam sinais, acentos, maiúsculas e espaços internos: perguntas com
 filtros ou códigos diferentes não compartilham respostas. Os atalhos de perguntas prontas
 continuam funcionando sem modelo; a CLI também consulta o cache antes de exigir chave de API.
-Logs ainda não têm rotação.
+Logs e traces locais têm rotação por tamanho (5 MiB e três arquivos anteriores por padrão).
+Cache/dashboard coordenam escritores no mesmo disco, e a quota diária da demo persiste em
+arquivo. Veja [preparação operacional](docs/operacao.md) para configurar, validar e entender
+o escopo local dessas garantias. Autenticação e estado entre réplicas sem disco comum continuam
+pendentes da definição da hospedagem/acesso.
 DuckDB permanece na linha 1.5; a migração para 2.x requer teste separado dos bancos.
 
 ## Dados e licença

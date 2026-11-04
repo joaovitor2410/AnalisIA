@@ -102,10 +102,14 @@ def shared_resources(dataset_path: str | None = None) -> AppResources:
                 None if demo else dataset_identity(settings),
                 allow_legacy=settings.duckdb_path == PROJECT_ROOT / "data/olheiro.duckdb",
             ),
-            runs=RunLog(settings.runs_path, include_content=not demo),
+            runs=RunLog.from_settings(settings, include_content=not demo),
             model=model,
             model_error=model_error,
-            budget=QuestionBudget(settings.olheiro_demo_total_question_limit) if demo else None,
+            budget=QuestionBudget(
+                settings.olheiro_demo_total_question_limit, settings.olheiro_demo_budget_path
+            )
+            if demo
+            else None,
             data_revision=revision,
         )
     except Exception:

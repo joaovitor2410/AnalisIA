@@ -20,6 +20,11 @@ data/answer_cache.json
 data/dashboard.json
 data/runs.jsonl
 data/traces.jsonl
+data/runs.jsonl.*
+data/traces.jsonl.*
+data/demo-budget.json
+data/.*.lock
+data/.*.tmp
 # Bases particulares importadas (inclui cópias dos CSVs/Parquets e estado por base)
 data/datasets/
 

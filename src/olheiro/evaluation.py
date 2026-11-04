@@ -691,7 +691,7 @@ def main(argv: list[str] | None = None) -> None:
             glossary,
             model,
             model_id,
-            RunLog(settings.runs_path),
+            RunLog.from_settings(settings),
             secret_value(settings.google_api_key),
             args.concurrency,
         )

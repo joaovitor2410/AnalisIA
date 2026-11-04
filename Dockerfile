@@ -30,6 +30,7 @@ ENV PATH="/app/.venv/bin:${PATH}" \
     DASHBOARD_PATH=/state/dashboard.json \
     RUNS_PATH=/state/runs.jsonl \
     TRACES_PATH=/state/traces.jsonl \
+    OLHEIRO_DEMO_BUDGET_PATH=/state/demo-budget.json \
     DATASETS_DIR=/state/datasets \
     EXPORTS_DIR=/state/exports
 WORKDIR /app

@@ -161,7 +161,7 @@ def main(argv: list[str] | None = None) -> None:
     pydantic_ai.BANNER_ENABLED = False  # a CLI é dona da própria saída
     settings = get_settings()
     setup_tracing(settings)
-    runs = RunLog(settings.runs_path)
+    runs = RunLog.from_settings(settings)
     try:
         con = connect_agent(settings.duckdb_path, settings.workspace_path)
     except WorkspaceInUseError as error:

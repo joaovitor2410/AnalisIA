@@ -16,12 +16,14 @@ from streamlit.testing.v1 import AppTest
 from olheiro.config import Settings, get_settings
 from olheiro.datasets import import_dataset
 from olheiro.db import connect_agent, scalar
+from olheiro.demo import QuestionBudget
 from olheiro.import_options import FileOptions, ImportOptions
 from olheiro.ingestion import preview_files
 from olheiro.launcher import ensure_database
 from olheiro.quality import check_relationship, table_quality
 from olheiro.semantic import Glossary, load_glossary
 from olheiro.semantic_store import manifest_revision, save_dataset_glossary
+from olheiro.storage import JsonLinesFile
 from olheiro.tools import run_sql
 
 
@@ -56,6 +58,15 @@ def check_import(settings: Settings) -> None:
     settings.datasets_dir.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(prefix="smoke-import-", dir=settings.datasets_dir) as folder:
         root = Path(folder)
+        # Estado persistente e retenção devem funcionar com UID sem root no volume.
+        quota = root / "quota.json"
+        assert QuestionBudget(1, quota).take()
+        assert not QuestionBudget(1, quota).take()
+        log = JsonLinesFile(root / "probe.jsonl", max_bytes=100, backup_count=2)
+        for i in range(30):
+            log.append([f'{{"index":{i},"text":"teste"}}'])
+        assert log.archives() and '"index":29' in log.read()[-1]
+        assert all(file.stat().st_size <= 100 for file in [log.path, *log.archives()])
         csv = root / "pedidos.csv"
         csv.write_text("cliente_id;valor\n001;10\n002;20\n", encoding="utf-8")
         parquet = root / "clientes.parquet"

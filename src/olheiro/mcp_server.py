@@ -151,7 +151,7 @@ def create_server(settings: Settings | None = None) -> MCPServer[ServerState]:
                 con,
                 glossary,
                 AnswerCache(config.answer_cache_path, cache_revision(config, revision)),
-                RunLog(config.runs_path),
+                RunLog.from_settings(config),
                 revision,
             )
             yield state

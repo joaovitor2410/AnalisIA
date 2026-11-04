@@ -30,7 +30,8 @@ A matriz pessoal/demo passou na
 [execução 40502502772](https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772).
 A F9B e a ampliação das avaliações também passaram; a última CI antes da F9C é a
 [execução 41843227764](https://github.com/joaovitor2410/AnalisIA/actions/runs/41843227764).
-A imagem da F9C ainda depende de CI após push autorizado.
+A [CI da F9C](https://github.com/joaovitor2410/AnalisIA/actions/runs/41865983452) passou após
+o push de `071dd2d`. A nova imagem da F8C.1 depende de seu próprio push e CI.
 
 ## O que fica disponível
 
@@ -64,7 +65,7 @@ Veja [conversa com contexto](conversa.md).
 | Histórico, cache adicional e dashboard | Memória da sessão do visitante |
 | Cursor DuckDB | Um por sessão/thread |
 | Workspace | Vazio, em memória; o agente não recebe ferramenta de gravação |
-| Orçamento de novas perguntas | Compartilhado entre sessões do mesmo processo |
+| Orçamento diário de novas perguntas | Arquivo persistente, compartilhado no mesmo disco |
 | Registro de execuções | Métricas locais, com pergunta omitida e sem texto de erro |
 
 Recuperar ou remover itens numa sessão não altera o dashboard de outro visitante. O estado
@@ -90,15 +91,19 @@ OLHEIRO_DEMO_MODE=true OLHEIRO_DEMO_MODEL_ENABLED=true \
 Há três limites:
 
 - **Sessão:** `OLHEIRO_SESSION_QUESTION_LIMIT`, com padrão 5 na demo; 0 mantém só o cache.
-- **Processo:** `OLHEIRO_DEMO_TOTAL_QUESTION_LIMIT`, padrão 10 tentativas compartilhadas entre
-  os visitantes, com reserva protegida por lock. Falhas do modelo também consomem uma tentativa.
+- **Dia UTC:** `OLHEIRO_DEMO_TOTAL_QUESTION_LIMIT`, padrão 10 tentativas compartilhadas entre
+  visitantes/processos no mesmo disco. `OLHEIRO_DEMO_BUDGET_PATH` guarda o contador persistente;
+  no Docker, fica em `/state/demo-budget.json`. Falhas do modelo também consomem a tentativa.
 - **Execução:** até 6 requisições contabilizadas pelo Pydantic AI e 12 chamadas de ferramenta
   por análise, para um loop do agente não continuar indefinidamente.
 
-Respostas do cache não consomem esses orçamentos. O limite global impede que uma nova aba
-reinicie o orçamento inteiro, mas é local ao processo: reiniciar a instância zera o contador
-e várias réplicas têm contadores próprios. Retentativas do SDK/provedor têm sua contagem;
+Respostas do cache não consomem esses orçamentos. Abrir uma aba ou reiniciar a instância
+não renova a quota diária persistida. Ela renova no próximo dia UTC; processos com discos
+diferentes têm contadores próprios. Todos os escritores devem usar o mesmo limite. Arquivo
+indisponível/incompatível bloqueia novas chamadas, preservando exemplos. A quota é reservada
+antes da chamada e não é devolvida em erro. Retentativas do SDK/provedor têm sua contagem;
 configure também limites no provedor antes de disponibilizar novas perguntas numa hospedagem.
+Veja [preparação operacional](operacao.md) para retenção de logs e limites da coordenação local.
 
 ## Gravação e privacidade
 

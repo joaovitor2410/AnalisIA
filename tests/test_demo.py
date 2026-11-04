@@ -170,6 +170,25 @@ def test_session_limit_blocks_model_but_not_curated_questions(
     assert app.session_state["model_questions"] == 1
 
 
+def test_unavailable_persistent_budget_blocks_model_but_keeps_examples_available(
+    demo_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from olheiro.config import Settings
+
+    calls = scripted_model(monkeypatch)
+    budget = Settings().olheiro_demo_budget_path
+    budget.write_text('{"day":')
+    app = AppTest.from_file(APP, default_timeout=20).run()
+    app.chat_input[0].set_value(PRIVATE_QUESTION).run()
+    assert not app.exception and app.error
+    assert "reservar a quota" in app.error[0].value
+    assert not calls and app.session_state["model_questions"] == 0
+    assert budget.read_text() == '{"day":'
+    app.chat_input[0].set_value(SEED_QUESTION).run()
+    assert not app.exception and app.session_state["history"][-1].report.from_cache
+    assert not calls
+
+
 def test_total_budget_is_shared_across_new_sessions_and_cache_is_free(
     demo_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

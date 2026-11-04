@@ -38,8 +38,9 @@ a porta do Streamlit não separa o workspace. Encerre a instância anterior com 
 terminal onde foi iniciada e use `uv run olheiro-app`. Não apague o banco para liberar o lock.
 O launcher explica o conflito antes de iniciar outro servidor; uma corrida posterior aparece
 na interface com o botão **Tentar novamente**. Reinicie o processo após atualizar módulos Python.
-Para processos simultâneos, configure caminhos de workspace e arquivos de estado separados;
-as tabelas salvas pertencem ao workspace de cada processo.
+Para processos simultâneos, configure caminhos de workspace separados; as tabelas salvas
+pertencem ao workspace de cada processo. A F8C.1 coordena cache/dashboard no mesmo disco,
+desde que todos os escritores usem a versão nova e tenham acesso aos sidecars de lock.
 
 O health HTTP prova que o Streamlit responde. O smoke test verifica também abertura da base,
 SQL, blindagem, filesystem, usuário, AppTest e regras de rede. Execute-o numa instância recém
@@ -61,6 +62,7 @@ Não se copiam banco local, `.env`, cache pessoal, dashboard ou logs do autor.
 | `/app/semantic` | Glossário | Imagem, leitura |
 | `/state` | Workspace, cache, dashboard, logs e exportações | Volume `olheiro_state` |
 | `/state/datasets` | Bases pessoais CSV/Parquet importadas, com estado próprio | Mesmo volume |
+| `/state/demo-budget.json` | Quota diária UTC da demo, reservada antes da chamada | Mesmo volume |
 | `/tmp` | Arquivos temporários | tmpfs, descartado ao recriar |
 
 O usuário é `10001:10001`; capacidades Linux são removidas e novos privilégios bloqueados.
@@ -87,8 +89,10 @@ o caminho HTTP até o Streamlit.
 
 O SDK Gemini instalado usa `trust_env=True`. A receita atende ao provedor Google implementado
 no Olheiro. Outros provedores ou OTLP remoto exigem política explícita e novo teste.
-O Compose usa tracing em arquivo e `OLHEIRO_TRACE_CONTENT=false`. O registro de execuções
-ainda guarda as perguntas no volume local; ele não é conteúdo público.
+O Compose usa tracing em arquivo e `OLHEIRO_TRACE_CONTENT=false`. No modo pessoal, o registro
+de execuções ainda guarda as perguntas no volume local; a demo omite conteúdo. A F8C.1 aplica
+rotação aos JSONLs: `OLHEIRO_LOG_MAX_BYTES` (padrão 5 MiB) e `OLHEIRO_LOG_BACKUP_COUNT` (3).
+Ativo e anteriores são lidos pela Operação. Detalhes e limitações em [operação](operacao.md).
 
 O smoke test verifica que a rede não permite conexão externa direta, que o proxy nega
 `example.com:443` com 403 e que permite túnel TCP para a API. Esse túnel não gera conteúdo
@@ -110,9 +114,11 @@ A infraestrutura base foi validada no GitHub em 2026-10-26, no commit `dc48922`,
 qualidade, build, smoke de isolamento e acesso HTTP pelo host passaram. A matriz pessoal/demo
 também passou no commit `845767d`, na
 [execução 40502502772](https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772).
-As alterações da F9A acrescentam importação CSV/Parquet ao smoke, `/state/datasets` gravável e
-limite HTTP de 64 MB; precisam de nova CI após push autorizado. Docker segue ausente
-neste Mac; a evidência de execução da infraestrutura vem do runner Linux.
+As alterações de ingestão, qualidade e conversa até a F9C passaram na
+[execução 41865983452](https://github.com/joaovitor2410/AnalisIA/actions/runs/41865983452).
+A F8C.1 acrescenta persistência de quota e rotação ao smoke; sua imagem precisa de nova CI
+após push autorizado. Docker segue ausente neste Mac; a evidência de execução da infraestrutura
+vem do runner Linux.
 Uploads são encaminhados sem buffering de requisição no NGINX, para não ocupar todo o
 tmpfs de 32 MB do proxy com um arquivo permitido de até 50 MB.
 
@@ -134,10 +140,11 @@ no volume; veja [datasets.md](datasets.md) para importação e recarga explícit
 
 ## Próxima etapa
 
-A Fase 8B prepara a demo antes de publicar, conforme escolha do autor: estado por sessão,
-exemplos curados, leitura e limites de uso. Veja [docs/demo.md](demo.md). O modo pessoal
-continua compartilhando estado entre sessões da instância. Hospedagem, acesso, condições de
-redistribuição dos dados e publicação ficam para uma etapa posterior.
+A Fase 8B preparou a demo antes de publicar, com estado por sessão, exemplos curados e leitura.
+A F8C.1 acrescenta [preparação operacional local](operacao.md): coordenação de JSONs, quota
+diária persistente e retenção de logs. Hospedagem, acesso/autenticação, condições de redistribuição
+dos dados e publicação continuam pendentes. Estado entre réplicas sem disco local comum exige
+backend próprio; os locks de arquivo não o substituem.
 
 DuckDB permanece em `>=1.5.6,<2`. A versão 2.0 altera o formato padrão: testes em cópias e uma
 estratégia de retorno precedem a atualização dos bancos. A recomendação oficial prevê teste

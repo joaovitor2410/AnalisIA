@@ -1,17 +1,18 @@
 """Exemplos curados e limite compartilhado da demonstração, independentes da interface."""
 
-import threading
 import tomllib
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import duckdb
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.usage import RunUsage
 
 from olheiro.agent import AnalysisAnswer, build_report
 from olheiro.cache import AnswerCache
 from olheiro.charts import check_chart
 from olheiro.sql_guard import check_query
+from olheiro.storage import JsonFile, MemoryStore
 
 
 class DemoExample(BaseModel):
@@ -43,17 +44,43 @@ def load_examples(path: Path, con: duckdb.DuckDBPyConnection) -> AnswerCache:
     return cache
 
 
-class QuestionBudget:
-    """Limite de tentativas ao modelo por processo; cache não consome esse orçamento."""
+class BudgetState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    day: date | None = None
+    used: int = Field(default=0, ge=0)
 
-    def __init__(self, limit: int) -> None:
+
+class BudgetUnavailableError(RuntimeError):
+    """Sem acesso confiável à quota, nenhuma requisição nova pode ser autorizada."""
+
+
+def utc_today() -> date:
+    return datetime.now(UTC).date()
+
+
+class QuestionBudget:
+    """Tentativas por dia UTC; com caminho, persiste e coordena processos no mesmo disco."""
+
+    def __init__(self, limit: int, path: Path | None = None) -> None:
+        if limit < 0:
+            raise ValueError("O limite de perguntas não pode ser negativo.")
         self.limit = limit
-        self._used = 0
-        self._lock = threading.Lock()
+        self.file = JsonFile(path, BudgetState) if path is not None else MemoryStore(BudgetState)
 
     def take(self) -> bool:
-        with self._lock:
-            if self._used >= self.limit:
-                return False
-            self._used += 1
+        try:
+            with self.file.update() as state:
+                today = utc_today()
+                if state.day is not None and state.day > today:
+                    raise ValueError("A data da quota está no futuro.")
+                if state.day != today:
+                    state.day, state.used = today, 0
+                if state.used >= self.limit:
+                    return False
+                state.used += 1
             return True
+        except (OSError, ValueError) as error:
+            raise BudgetUnavailableError(
+                "Não foi possível reservar a quota da demonstração. "
+                "Nenhuma chamada ao modelo foi autorizada. Tente novamente mais tarde."
+            ) from error

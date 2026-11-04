@@ -13,7 +13,7 @@ setup_tracing pode ser chamado várias vezes (só a primeira configura).
 
 import atexit
 import json
-import threading
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -29,6 +29,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.instrumented import InstrumentationSettings
 
 from olheiro.config import Settings
+from olheiro.storage import DEFAULT_LOG_BACKUP_COUNT, DEFAULT_LOG_MAX_BYTES, JsonLinesFile
 
 TRACER_NAME = "olheiro"
 
@@ -39,17 +40,27 @@ _include_content = False
 class JsonLinesSpanExporter(SpanExporter):
     """Grava cada span como uma linha JSON: trace local, sem nenhuma infraestrutura."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        max_bytes: int = DEFAULT_LOG_MAX_BYTES,
+        backup_count: int = DEFAULT_LOG_BACKUP_COUNT,
+    ) -> None:
         self.path = path
-        self._lock = threading.Lock()
+        self.file = JsonLinesFile(path, max_bytes=max_bytes, backup_count=backup_count)
 
     def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
         lines = [span.to_json(indent=None).replace("\n", " ") for span in spans]
-        with self._lock:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as file:
-                file.write("\n".join(lines) + "\n")
-        return SpanExportResult.SUCCESS
+        try:
+            written = self.file.append(lines)
+        except OSError as error:
+            logging.getLogger(__name__).warning(
+                "Não foi possível gravar os traces locais (%s).",
+                type(error).__name__,
+            )
+            return SpanExportResult.FAILURE
+        return SpanExportResult.SUCCESS if written == len(lines) else SpanExportResult.FAILURE
 
 
 def configure_tracing(processor: SpanProcessor, include_content: bool) -> TracerProvider:
@@ -70,7 +81,11 @@ def setup_tracing(settings: Settings) -> None:
     if _provider is not None or settings.olheiro_tracing == "off":
         return
     exporter: SpanExporter = (
-        JsonLinesSpanExporter(settings.traces_path)
+        JsonLinesSpanExporter(
+            settings.traces_path,
+            max_bytes=settings.olheiro_log_max_bytes,
+            backup_count=settings.olheiro_log_backup_count,
+        )
         if settings.olheiro_tracing == "file"
         else OTLPSpanExporter(endpoint=settings.olheiro_otlp_endpoint)
     )
@@ -115,11 +130,9 @@ class SpanView:
 
 def read_trace(path: Path, trace_id: str) -> list[SpanView]:
     """Os spans de um trace gravado pelo JsonLinesSpanExporter, em ordem de início."""
-    if not path.exists():
-        return []
     wanted = f"0x{trace_id}"  # no arquivo o id vem com prefixo; no RunRecord, sem
     raw = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in JsonLinesFile(path).read():
         if wanted not in line:
             continue
         try:

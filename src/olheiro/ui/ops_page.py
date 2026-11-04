@@ -36,6 +36,10 @@ def ops_page() -> None:
         "nível pago; o trace mostra o passo a passo. Nada nesta página chama o modelo.",
     )
     records = resources.runs.read()
+    st.caption(
+        "As métricas usam o histórico local retido. Registros mais antigos são removidos "
+        "conforme a política de retenção."
+    )
     if not records:
         st.info("Nenhuma execução registrada ainda. Faça uma pergunta na página Perguntar.")
         return

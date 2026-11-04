@@ -105,7 +105,7 @@ O salvamento valida referências antes de escrever. Uma nova versão de glossár
 por completo, e só depois o manifesto passa a apontá-la por troca atômica. Uma falha antes
 da publicação preserva a versão ativa anterior. Edições concorrentes usam lock de arquivo
 e revisão esperada: uma sessão desatualizada precisa recarregar. Esse lock é do editor de
-semântica; não resolve a coordenação dos demais arquivos JSON entre processos.
+semântica; a [F8C.1](operacao.md) acrescenta coordenação dos demais JSONs no mesmo disco local.
 
 App e MCP consultam a versão atual das regras sem reiniciar ou reabrir o banco. Alterações
 mudam o namespace do cache. Na próxima interação da interface, histórico, rascunho e

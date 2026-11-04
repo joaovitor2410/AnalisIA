@@ -32,6 +32,10 @@ Ainda em **04/11**, o autor autorizou o push e a próxima fase: `94f5cca` enviad
 `origin/main`, CI `41843227764` aprovada (qualidade + contêiner pessoal/demo).
 **F9C entregue:** contexto curto por sessão no app e na CLI `--chat`, cache contextual e
 aprovações vinculadas à sessão/regras e de uso único. Guia: `docs/conversa.md`.
+Na sequência, o autor autorizou o push da F9C e a próxima fase. `071dd2d` foi enviado;
+CI `41865983452` aprovada nos três jobs. A **F8C.1** prepara a operação local: JSONs com
+transações entre processos, quota diária UTC persistente da demo e rotação dos logs/traces.
+Hospedagem, autenticação/acesso e publicação permanecem por definir. Guia: `docs/operacao.md`.
 - Funções: chat analítico com evidência e passos do agente; dashboard (fixar respostas, KPIs);
   explorador de dados; perguntas prontas via cache; importação/seleção de bases pessoais
   CSV/Parquet (F9A). Upload do visitante da demo continua fora do escopo.
@@ -94,7 +98,7 @@ aprovações vinculadas à sessão/regras e de uso único. Guia: `docs/conversa.
 | F4: `ChartSpec` em `charts.py` com `kind="metric"` (KPI) | Visualização é do domínio de gráficos e o dashboard também a usa. `check_chart` levanta `ChartError` neutro; o agente converte em `ModelRetry`. KPI: `go.Indicator` na CLI, `st.metric` no app. |
 | Cache de respostas (`cache.py`) guarda `AnalysisAnswer`, não a tabela | No acerto, valida e reexecuta o SQL (números atuais, 0 requisições). Chave = pergunta normalizada. Pausas para aprovação não entram no cache (repetir não regravaria). `AgentReport.from_cache` informa a origem. |
 | Dashboard (`dashboard.py`) = SQL + `ChartSpec` em JSON | Redesenhado sem o modelo; SQL revalidado ao renderizar (o arquivo pode ser editado). Só respostas com evidência podem ser fixadas. |
-| `storage.JsonFile` (lock + escrita atômica) | Compartilhado por cache e dashboard; é o ponto a trocar por um banco num deploy multiusuário. |
+| `storage.JsonFile` (flock + escrita atômica, F8C.1) | Cache, dashboard e quota coordenam escritores no mesmo filesystem local. Sidecar estável, temporário único, flush/fsync e replace. Réplicas sem disco comum ainda exigem backend compartilhado. |
 | Uma conexão blindada por processo + `session_cursor` por sessão | DuckDB pede um cursor por thread e não anexa o mesmo arquivo duas vezes no processo. Testado: o cursor herda a blindagem (global) mas **não** o `USE lake` (por conexão), então `session_cursor` repete o `USE`. |
 | Streamlit (`ui/`, `app.py`) com `st.navigation` e páginas-função | Perguntar (chat, exemplos do cache via `st.pills`, aprovação por botões, fixar), Dashboard (KPIs em linha, cartões 2 colunas) e Dados (glossário, prévia, perfil). `width="stretch"` substituiu `use_container_width`. |
 | Testes de UI com `AppTest` | `from_function` por página (o `switch_page` exige arquivo); modelo bloqueado ou `FunctionModel` via `monkeypatch` em `ui.resources.build_model`; arquivos do app apontados para `tmp_path` por variáveis de ambiente. |
@@ -124,7 +128,7 @@ aprovações vinculadas à sessão/regras e de uso único. Guia: `docs/conversa.
 | Correção pós-F8A: conflito de workspace tratado | Uma instância antiga do Streamlit mantinha o lock e outra falhava ao iniciar. `connect_agent` fecha conexões parciais em qualquer falha e converte o conflito em `WorkspaceInUseError`, com PID e orientação. `olheiro-app` verifica o workspace antes de subir o servidor; app direto mostra mensagem e botão de tentar novamente; CLI e diagnóstico também explicam o conflito. Sem apagar/substituir o workspace ou mudar silenciosamente para outro banco. **151 testes**, incluindo lock entre dois processos reais, liberação do raw após falha, recuperação no AppTest e recusa de startup duplicado; lint/format/mypy sem erros. |
 | F8B: demo do Streamlit com estado por sessão | `OLHEIRO_DEMO_MODE=true`; `MemoryStore` (cópias profundas e atualização transacional) guarda cache e dashboard de cada visitante. Só base/glossário/exemplos e orçamento de instância são compartilhados. `connect_agent(..., None)` anexa workspace vazio em memória; o arquivo pessoal não é aberto. Modo pessoal preserva a persistência anterior. |
 | F8B: exemplos em TOML, curadoria SQL sem LLM | `demo/examples.toml`, seis exemplos validados e executados ao iniciar; `AnalysisAnswer`/`ChartSpec` reutilizados. Cada sessão recebe cópia do cache; cada resposta reexecuta o SQL. Textos evitam números fixos, ranking inclui empates e aproveitamento usa pontos/(3*jogos). |
-| F8B: chamadas ao Gemini exigem opt-in | `OLHEIRO_DEMO_MODEL_ENABLED=false` por padrão, mesmo com chave pessoal presente. Quando habilitado: cinco tentativas por sessão por padrão, dez por processo (`OLHEIRO_DEMO_TOTAL_QUESTION_LIMIT`, lock) e `UsageLimits(request_limit=6, tool_calls_limit=12)` por análise. Cache é livre. Orçamento de instância reinicia com o processo e não é controle financeiro do provedor. |
+| F8B/F8C.1: chamadas ao Gemini exigem opt-in | `OLHEIRO_DEMO_MODEL_ENABLED=false` por padrão, mesmo com chave pessoal presente. Quando habilitado: cinco tentativas por sessão, dez por dia UTC no disco compartilhado (`OLHEIRO_DEMO_TOTAL_QUESTION_LIMIT` + `OLHEIRO_DEMO_BUDGET_PATH`) e `UsageLimits(request_limit=6, tool_calls_limit=12)` por análise. Reserva persistida antes da chamada, falha bloqueia o modelo; cache é livre. Não é controle financeiro do provedor. |
 | F8B: somente leitura e privacidade | `AgentDeps.allow_saves=false` retira `save_result` via `prepare`; guarda na função também recusa. Operação sai da navegação e recusa invocação direta. `RunLog(include_content=False)` omite pergunta e texto de erro. Traces detalhados ficam obrigatoriamente off na demo, pois exceções de bibliotecas podem conter argumentos além do payload. |
 | F9A: bases locais independentes | `olheiro-dataset import` ou upload pessoal cria cópias de CSV/Parquet e banco materializado; manifesto publicado depois da validação. Nomes duplicados/arquivos inválidos não substituem bases existentes. `OLHEIRO_DATASET` aplica o mesmo perfil a app, CLI, diagnóstico e MCP. |
 | F9A: contexto de qualquer domínio | Glossário opcional/parcial; nomes e tipos vêm do catálogo. Instruções pedem exploração, unidade/granularidade explícitas e verificação de cardinalidade antes de JOINs. Valores de glossário têm limite, aviso de truncamento e timeout. Escape também em nomes do catálogo e caminhos. |
@@ -225,6 +229,7 @@ evals/estoque.yaml          suíte de estoque (10 casos, 8 gabaritos SQL)
 evals/fixtures/inventory/   produtos, saldos, fornecedores, opções e regras sintéticos
 docs/avaliacoes.md         execução offline/real, critérios e limites do benchmark
 docs/conversa.md           contexto no app/CLI, cache por contexto e aprovações da F9C
+docs/operacao.md           coordenação de arquivos, quota persistente e rotação local (F8C.1)
 evals/results/              resultados por modelo + README comparativo
 learning/manual_loop.py     F1: loop do agente à mão com google-genai (material de estudo)
 tests/                      pytest (pythonpath inclui learning/; conftest isola tracing e logs)
@@ -470,28 +475,64 @@ data/exports/               exportações do agente (ignorado no Git)
   após push da F9C. Próximos itens: rodada real F5 após faturamento/liberação e preparação
   operacional/publicação F8C, com hospedagem e condições dos dados ainda por decidir.
 
+- [x] **Fase 8C.1: preparação operacional local (04/11/2026).** Autor autorizou push da F9C
+  e avanço. `071dd2d` enviado após **290 testes**, lint/format e mypy aprovados. CI verde:
+  https://github.com/joaovitor2410/AnalisIA/actions/runs/41865983452 (qualidade + contêiner
+  pessoal/demo). Nova fase fica em commit local, aguardando testes/liberação antes do push.
+  `JsonFile.update` lê e publica sob flock em sidecar estável: coordena objetos/processos
+  no mesmo filesystem local. Temporário único, flush/fsync e replace; exceções antes de
+  publicar preservam o arquivo. JSON corrompido não é resetado. Formatos atuais preservados.
+  Quota da demo agora é **diária UTC**, persistente em `data/demo-budget.json`, configurada
+  por `OLHEIRO_DEMO_BUDGET_PATH` (Docker `/state/demo-budget.json`). Limite padrão 10 segue
+  em `OLHEIRO_DEMO_TOTAL_QUESTION_LIMIT`, entre sessões/processos com mesmo arquivo/limite.
+  Reinício não renova quota. Reserva antes da chamada, sem reembolso em falha; corrupção,
+  falha de I/O ou relógio regressivo bloqueiam modelo, preservando os exemplos. Limites de
+  sessão/análise, opt-in e privacidade continuam. Não é controle financeiro do provedor.
+  `JsonLinesFile` coordena escrita/rotação/leitura entre processos. Defaults: 5 MiB e três
+  anteriores (`OLHEIRO_LOG_MAX_BYTES`, `OLHEIRO_LOG_BACKUP_COUNT`), usados por RunLog e
+  exportador de spans no app/CLI/MCP/evals, também no Compose. Operação/traces leem anteriores;
+  métricas refletem só o histórico retido. Nova escrita preserva a linha após um registro
+  interrompido; leitores ignoram JSON/UTF-8 inválido. Registro maior que o teto é omitido com
+  aviso sem conteúdo; exporter retorna falha. Erro de I/O de observabilidade não mascara
+  resultado/erro original. Arquivos grandes legados expiram progressivamente, sem corte.
+  **309 testes offline**, também em cópia sem `.env`/chaves: quatro processos, threads,
+  escritor encerrado, rollback/falha de publicação, rotação concorrente, quota persistente,
+  renovação UTC e indisponibilidade sem chamar modelo. Ruff lint/format, mypy (40 módulos)
+  e build wheel/sdist aprovados. Smoke de ingestão com quota/rotação passou localmente nos
+  modos pessoal/demo. Sem dependências novas, Gemini, migração de banco ou publicação.
+  Referências oficiais Python 3.13 conferidas. Documentação em `docs/operacao.md`, README,
+  demo e deployment; arquivos auxiliares/quotas/rotação ignorados pelo Git. Docker ausente
+  no Mac: nova imagem depende de CI após push autorizado. Rodar: `uv run --locked analisia`.
+  Testar: `uv run --locked pytest -q`, `uv run --locked ruff check .`,
+  `uv run --locked ruff format --check .`, `uv run --locked mypy`, `uv build --offline`.
+  Próximos itens: hospedagem/acesso, autenticação para dados privados, backend entre réplicas
+  sem disco comum, política de backup/remoção/versões semânticas e publicação F8C. Rodada
+  real F5 e condições de redistribuição dos dados continuam pendentes próprias.
+
 ## Pendências / em aberto
 - **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB
   recomenda isolamento de SO/contêiner). Para deploy (F8): rodar em contêiner sem rede de saída
   além da API do modelo.
 - **Ancoragem é heurística:** confere números, não afirmações qualitativas ("melhor", "pior").
   Um LLM-juiz poderia cobrir isso depois, com custo.
-- **Observabilidade local:** `data/traces.jsonl` e `data/runs.jsonl` crescem sem rotação (ok
-  para uso local; num deploy, usar `otlp` e um backend com retenção).
+- **Observabilidade local:** F8C.1 adiciona rotação por tamanho e quantidade de arquivos.
+  Retenção por data/prazo, busca ampla e auditoria durável exigem backend próprio (OTLP).
 - **MCP local (F7):** só stdio e leitura. HTTP remoto/autenticação e eventual aprovação humana
   por elicitation ficam para uma evolução futura; não há aprovação por argumento do modelo.
   `OLHEIRO_SESSION_QUESTION_LIMIT` limita só o app Streamlit, não o MCP local. Configuração de
   clientes documentada, sem alterar arquivos do Claude automaticamente.
 - **Para a publicação (F8C):** decidir hospedagem/acesso e condições dos dados; validar a imagem
-  F9C após novo push (F5 complementar já verde em `41843227764`); limites no provedor se
+  F8C.1 após novo push (F9C já verde em `41865983452`); limites no provedor se
   habilitar perguntas. F5 real permanece pendente de faturamento/liberação, embora a
   preparação offline multidomínio esteja concluída.
-  A F8B já prepara exemplos versionados e estado por sessão. O orçamento é por processo:
-  reinícios/replicação precisam ser considerados na hospedagem.
+  A F8B prepara exemplos versionados e estado por sessão. F8C.1 persiste quota diária no
+  disco; réplicas sem filesystem local comum exigem backend compartilhado. Autenticação
+  e autorização de dados privados dependem do público e da forma de acesso escolhidos.
 - **Limitações conhecidas:** F9C mantém contexto limitado no app/CLI `--chat`; não persiste
   conversas nem recupera referências fora da janela automaticamente. CLI simples e MCP seguem
-  independentes. F9A invalida caches de outra revisão; cache legado é regenerado. JSONs ainda
-  usam locks por objeto/thread, sem coordenação entre processos/réplicas. UI mantém conexões
+  independentes. F9A invalida caches de outra revisão; cache legado é regenerado. F8C.1
+  coordena JSONs entre processos no mesmo disco; não resolve réplicas com discos independentes.
+  UI mantém conexões
   das bases selecionadas no cache; medir ciclo de vida/memória com muitas bases. F9B adicionou
   prévia e tipos/codificações; significado de negócio, chaves compostas e acurácia real
   continuam exigindo validação. Retenção das versões do glossário pertence à operação.

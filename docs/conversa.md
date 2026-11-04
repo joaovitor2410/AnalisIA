@@ -126,7 +126,8 @@ SDK. Este caso confirma o fluxo, sem substituir o benchmark real F5.
 Pydantic AI 2.59.0 e Streamlit 1.66.1 conferidos no ambiente instalado, sem dependências novas.
 Referência: [histórico de mensagens do Pydantic AI](https://pydantic.dev/docs/ai/core-concepts/message-history/).
 Não há persistência de conversas, resumo por LLM nem busca de memórias antigas nesta fase.
-Publicação, retenção de logs e coordenação entre processos continuam nas etapas de operação.
+A [F8C.1](operacao.md) acrescenta rotação dos logs e coordenação de arquivos no disco local.
+Publicação, autenticação e estado entre réplicas sem disco comum continuam pendentes.
 
 Perguntas para revisar os conceitos:
 

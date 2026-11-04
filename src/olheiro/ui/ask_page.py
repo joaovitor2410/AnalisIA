@@ -13,6 +13,7 @@ from pydantic_ai.exceptions import AgentRunError, FallbackExceptionGroup
 from olheiro.agent import AgentDeps, AgentReport, ApprovalContextError, PendingApproval, resume
 from olheiro.cache import ask_with_cache, normalize_question
 from olheiro.db import WORKSPACE_CATALOG
+from olheiro.demo import BudgetUnavailableError
 from olheiro.errors import explain_model_failure
 from olheiro.semantic import columns_by_table
 from olheiro.telemetry import tracked
@@ -239,7 +240,7 @@ def handle_question(question: str, resources: AppResources, deps: AgentDeps) -> 
             if outcome is None:
                 return
             run.finish(outcome)
-    except (AgentRunError, FallbackExceptionGroup) as error:
+    except (AgentRunError, FallbackExceptionGroup, BudgetUnavailableError) as error:
         st.session_state.history.append(ChatTurn(question, error=explain_model_failure(error)))
         return
     record(question, outcome)
@@ -268,7 +269,7 @@ def answer(
             ChatTurn(
                 question,
                 error="As novas perguntas desta demonstração foram esgotadas. "
-                "As perguntas prontas continuam disponíveis.",
+                "A cota é diária (UTC); as perguntas prontas continuam disponíveis.",
             )
         )
         return None

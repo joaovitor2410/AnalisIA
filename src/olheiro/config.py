@@ -11,6 +11,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from olheiro.storage import DEFAULT_LOG_BACKUP_COUNT, DEFAULT_LOG_MAX_BYTES
+
 # src/olheiro/config.py -> parents[2] é a raiz do projeto
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -69,6 +71,7 @@ class Settings(BaseSettings):
     # Chamadas ao modelo exigem opt-in, mesmo que o .env pessoal já contenha uma chave.
     olheiro_demo_model_enabled: bool = False
     olheiro_demo_total_question_limit: int = Field(default=10, ge=0)
+    olheiro_demo_budget_path: Path = Path("data/demo-budget.json")
     demo_examples_path: Path = Path("demo/examples.toml")
     # Observabilidade (F6). Traces OpenTelemetry: off, file (traces_path) ou otlp (backend).
     olheiro_tracing: Literal["off", "file", "otlp"] = "file"
@@ -77,6 +80,8 @@ class Settings(BaseSettings):
     olheiro_trace_content: bool = True
     traces_path: Path = Path("data/traces.jsonl")
     runs_path: Path = Path("data/runs.jsonl")
+    olheiro_log_max_bytes: int = Field(default=DEFAULT_LOG_MAX_BYTES, ge=1024)
+    olheiro_log_backup_count: int = Field(default=DEFAULT_LOG_BACKUP_COUNT, ge=1, le=20)
 
     @field_validator(
         "duckdb_path",
@@ -93,6 +98,7 @@ class Settings(BaseSettings):
         "datasets_dir",
         "olheiro_dataset",
         "olheiro_workspace_override",
+        "olheiro_demo_budget_path",
     )
     @classmethod
     def _resolve_from_root(cls, path: Path | None) -> Path | None:
