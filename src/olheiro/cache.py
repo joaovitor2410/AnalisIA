@@ -7,6 +7,7 @@ Numa demo pública, um cache de exemplos mantém a demo funcionando mesmo sem co
 """
 
 import hashlib
+import json
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ from pydantic_ai.usage import RunUsage
 
 from olheiro.agent import AgentDeps, AgentReport, AnalysisAnswer, PendingApproval, ask, build_report
 from olheiro.charts import check_chart
+from olheiro.conversation import Conversation
 from olheiro.sql_guard import UnsafeQueryError, check_query
 from olheiro.storage import JsonFile, MemoryStore
 from olheiro.tools import QueryResult
@@ -29,6 +31,7 @@ class CachedAnswer(BaseModel):
     model_name: str
     created_at: datetime
     evidence_hash: str | None = None
+    context_key: str | None = None
 
 
 class CacheFile(BaseModel):
@@ -51,6 +54,14 @@ def normalize_question(question: str) -> str:
     return unicodedata.normalize("NFC", question.strip())
 
 
+def answer_key(question: str, context_key: str | None = None) -> str:
+    normalized = normalize_question(question)
+    if context_key is None:
+        return normalized
+    content = json.dumps([normalized, context_key], ensure_ascii=False)
+    return "context:" + hashlib.sha256(content.encode()).hexdigest()
+
+
 class AnswerCache:
     def __init__(self, path: Path | None, namespace: str | None = None) -> None:
         self.file = JsonFile(path, CacheFile) if path is not None else MemoryStore(CacheFile)
@@ -63,18 +74,26 @@ class AnswerCache:
         # Recupera a pergunta original de caches antigos, cujas chaves perdiam informação.
         # Uma resposta só pode ser encontrada pelo conteúdo que a originou.
         cache.answers = {
-            normalize_question(entry.question): entry for entry in cache.answers.values()
+            answer_key(entry.question, entry.context_key): entry for entry in cache.answers.values()
         }
         return cache
 
     def questions(self) -> list[str]:
         """Perguntas já respondidas, na forma original: viram os exemplos do app."""
-        return [entry.question for entry in self.read().answers.values()]
+        return [
+            entry.question for entry in self.read().answers.values() if entry.context_key is None
+        ]
 
-    def lookup(self, question: str, con: duckdb.DuckDBPyConnection) -> AgentReport | None:
+    def lookup(
+        self, question: str, con: duckdb.DuckDBPyConnection, context_key: str | None = None
+    ) -> AgentReport | None:
         """Resposta guardada com a evidência reexecutada agora, ou None se não houver."""
-        entry = self.read().answers.get(normalize_question(question))
-        if entry is None:
+        entry = self.read().answers.get(answer_key(question, context_key))
+        if (
+            entry is None
+            or entry.context_key != context_key
+            or normalize_question(entry.question) != normalize_question(question)
+        ):
             return None
         try:
             if entry.output.sql:
@@ -93,38 +112,58 @@ class AnswerCache:
         except (UnsafeQueryError, duckdb.Error, ValueError):
             return None  # SQL antigo não serve mais (ex.: coluna mudou): trata como ausente
 
-    def store(self, question: str, report: AgentReport) -> None:
+    def store(self, question: str, report: AgentReport, context_key: str | None = None) -> None:
         entry = CachedAnswer(
             question=question,
             output=report.output,
             model_name=report.model_name,
             created_at=datetime.now(),
             evidence_hash=evidence_hash(report.evidence),
+            context_key=context_key,
         )
         with self.file.update() as cache:
             if cache.namespace != self.namespace:
                 cache.answers = {}
                 cache.namespace = self.namespace
             cache.answers = {
-                normalize_question(saved.question): saved for saved in cache.answers.values()
+                answer_key(saved.question, saved.context_key): saved
+                for saved in cache.answers.values()
             }
-            cache.answers[normalize_question(question)] = entry
+            cache.answers[answer_key(question, context_key)] = entry
 
 
 def ask_with_cache(
-    question: str, deps: AgentDeps, cache: AnswerCache, model: Model | None = None
+    question: str,
+    deps: AgentDeps,
+    cache: AnswerCache,
+    model: Model | None = None,
+    *,
+    conversation: Conversation | None = None,
 ) -> AgentReport | PendingApproval:
     """Responde do cache se puder; senão pergunta ao agente e guarda a resposta.
 
     Pausas para aprovação (save_result) não entram no cache: repetir a resposta não repetiria
     a gravação, então ela não vale como resposta pronta.
     """
-    cached = cache.lookup(question, deps.con)
+    if conversation is not None:
+        conversation.bind(deps, cache.namespace)
+    context_key = conversation.cache_key() if conversation is not None else None
+    cached = cache.lookup(question, deps.con, context_key)
     if cached is not None:
+        if conversation is not None:
+            conversation.remember(question, cached)
         return cached
-    outcome = ask(question, deps, model)
+    outcome = ask(
+        question,
+        deps,
+        model,
+        message_history=conversation.messages() if conversation is not None else None,
+    )
     # Uma recusa pode deixar de valer após salvar outra tabela em workspace. Só exemplos
     # curados (load_examples) guardam recusas; respostas novas sem evidência não são cacheadas.
-    if isinstance(outcome, AgentReport) and outcome.output.answerable:
-        cache.store(question, outcome)
+    if isinstance(outcome, AgentReport):
+        if outcome.output.answerable:
+            cache.store(question, outcome, context_key)
+        if conversation is not None:
+            conversation.remember(question, outcome)
     return outcome

@@ -1,6 +1,6 @@
 """Página Perguntar: chat com o agente, aprovação de gravação e fixar no dashboard.
 
-Cada pergunta é independente (sem memória da conversa): toda resposta traz a própria evidência.
+Continuações usam contexto limitado da sessão; toda resposta traz a própria evidência.
 """
 
 from dataclasses import dataclass
@@ -10,8 +10,8 @@ import duckdb
 import streamlit as st
 from pydantic_ai.exceptions import AgentRunError, FallbackExceptionGroup
 
-from olheiro.agent import AgentDeps, AgentReport, PendingApproval, resume
-from olheiro.cache import ask_with_cache
+from olheiro.agent import AgentDeps, AgentReport, ApprovalContextError, PendingApproval, resume
+from olheiro.cache import ask_with_cache, normalize_question
 from olheiro.db import WORKSPACE_CATALOG
 from olheiro.errors import explain_model_failure
 from olheiro.semantic import columns_by_table
@@ -19,7 +19,7 @@ from olheiro.telemetry import tracked
 from olheiro.tools import query_rows
 from olheiro.ui.components import show_report, show_table
 from olheiro.ui.presentation import context_strip, page_intro
-from olheiro.ui.resources import AppResources, load_resources, session_deps
+from olheiro.ui.resources import AppResources, load_resources, session_conversation, session_deps
 
 MAX_EXAMPLES = 6
 PREVIEW_ROWS = 5
@@ -47,6 +47,7 @@ def ask_page() -> None:
     st.session_state.setdefault("history", [])
     st.session_state.setdefault("pending", None)
     st.session_state.setdefault("model_questions", 0)
+    conversation = session_conversation(resources, deps)
 
     page_intro(
         "Seu próximo insight começa aqui",
@@ -66,7 +67,7 @@ def ask_page() -> None:
                 icon=":material/add_comment:",
                 on_click=clear_history,
                 disabled=pending is not None,
-                help="Limpa o histórico desta sessão. Itens fixados permanecem no dashboard.",
+                help="Limpa o histórico e o contexto desta sessão. Itens fixados permanecem.",
             )
     show_examples(resources)
     if resources.settings.olheiro_demo_mode:
@@ -86,7 +87,15 @@ def ask_page() -> None:
         with st.chat_message("assistant"), st.spinner("Analisando os dados…"):
             handle_question(question, resources, deps)
         st.rerun()
-    st.caption("Cada pergunta é independente. Inclua o contexto que a AnalisIA precisa analisar.")
+    st.caption(
+        f"Continue a análise com outra pergunta. Contexto: {conversation.turn_count} de até "
+        f"{conversation.max_turns} análises recentes. Nova exploração limpa esse contexto."
+    )
+    if conversation.truncated:
+        st.caption(
+            "O contexto foi limitado por tamanho ou quantidade de análises. "
+            "Repita filtros, períodos ou referências antigas quando necessário."
+        )
 
 
 def show_welcome(resources: AppResources, tables: list[str], pending: bool) -> None:
@@ -169,6 +178,10 @@ def submit_draft() -> None:
 def clear_history() -> None:
     st.session_state.history = []
     st.session_state.question_draft = ""
+    st.session_state.pop("queued_question", None)
+    conversation = st.session_state.get("conversation")
+    if conversation is not None:
+        conversation.clear()
 
 
 def discard_draft() -> None:
@@ -210,6 +223,7 @@ def show_examples(resources: AppResources) -> None:
             on_change=queue_example,
             disabled=st.session_state.get("pending") is not None,
         )
+        st.caption("Perguntas prontas, selecionadas ou digitadas, iniciam um novo contexto.")
 
 
 def queue_example() -> None:
@@ -235,8 +249,15 @@ def answer(
     question: str, resources: AppResources, deps: AgentDeps
 ) -> AgentReport | PendingApproval | None:
     """Do cache, do modelo, ou None se o modelo não puder ser usado (o motivo vai para o chat)."""
-    cached = resources.cache.lookup(question, deps.con)
+    conversation = session_conversation(resources, deps)
+    if normalize_question(question) in {
+        normalize_question(example) for example in resources.cache.questions()
+    }:
+        # Um atalho curado é uma análise independente, inclusive quando digitado.
+        conversation.clear()
+    cached = resources.cache.lookup(question, deps.con, conversation.cache_key())
     if cached is not None:  # do cache: não conta no limite da sessão
+        conversation.remember(question, cached)
         return cached
     problem = model_unavailable(resources)
     if problem is not None:
@@ -252,7 +273,9 @@ def answer(
         )
         return None
     st.session_state.model_questions += 1
-    return ask_with_cache(question, deps, resources.cache, resources.model)
+    return ask_with_cache(
+        question, deps, resources.cache, resources.model, conversation=conversation
+    )
 
 
 def model_unavailable(resources: AppResources) -> str | None:
@@ -330,10 +353,12 @@ def decide(approved: bool, resources: AppResources, deps: AgentDeps) -> None:
             st.spinner("Continuando…"),
         ):
             outcome = run.finish(resume(pending.approval, approved, deps, resources.model))
-    except (AgentRunError, FallbackExceptionGroup) as error:
+    except (AgentRunError, FallbackExceptionGroup, ApprovalContextError) as error:
         st.session_state.history.append(
             ChatTurn(pending.question, error=explain_model_failure(error))
         )
     else:
+        if isinstance(outcome, AgentReport):
+            session_conversation(resources, deps).remember(pending.question, outcome)
         record(pending.question, outcome)
     st.rerun()

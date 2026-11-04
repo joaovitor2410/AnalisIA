@@ -142,6 +142,8 @@ def test_two_visitors_have_independent_dashboards_history_and_caches(
     assert PRIVATE_QUESTION not in second_resources.cache.questions()
     assert PRIVATE_QUESTION not in second.pills(key="example").options
     assert second.session_state["history"] == []
+    assert second.session_state["conversation"].turn_count == 0
+    assert first.session_state["conversation"] is not second.session_state["conversation"]
     assert first_resources.con is second_resources.con  # só os dados públicos são comuns
     assert first.session_state["deps"].con is not second.session_state["deps"].con
     assert first_resources.budget is second_resources.budget

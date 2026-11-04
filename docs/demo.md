@@ -28,7 +28,9 @@ a configuração não publica o app na internet. A infraestrutura base foi valid
 [execução de CI 40365502597](https://github.com/joaovitor2410/AnalisIA/actions/runs/40365502597).
 A matriz pessoal/demo passou na
 [execução 40502502772](https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772).
-Alterações posteriores de importação da F9A ainda precisam de nova CI.
+A F9B e a ampliação das avaliações também passaram; a última CI antes da F9C é a
+[execução 41843227764](https://github.com/joaovitor2410/AnalisIA/actions/runs/41843227764).
+A imagem da F9C ainda depende de CI após push autorizado.
 
 ## O que fica disponível
 
@@ -48,6 +50,10 @@ Os exemplos estão em `demo/examples.toml`. Foram curados com SQL, sem geração
 Ao iniciar, o código valida e executa o SQL e confere o gráfico de cada exemplo. A cada
 resposta do cache, o SQL é validado e reexecutado; as tabelas não são snapshots embutidos.
 Os textos orientam a leitura e evitam números fixos que poderiam ficar antigos.
+Na F9C, exemplos prontos iniciam novo contexto. Com modelo habilitado, o visitante pode
+continuar uma análise; a janela de contexto pertence somente à sessão e mantém até seis
+análises/16.000 caracteres. Novas continuações respeitam as quotas e exigem evidência própria.
+Veja [conversa com contexto](conversa.md).
 
 ## Isolamento e duração
 

@@ -18,6 +18,7 @@ from pydantic_ai.usage import UsageLimits
 from olheiro.agent import AgentDeps, build_model
 from olheiro.cache import AnswerCache, CacheFile
 from olheiro.config import PROJECT_ROOT, Settings, get_settings
+from olheiro.conversation import Conversation
 from olheiro.dashboard import DashboardStore
 from olheiro.datasets import cache_revision, database_revision, dataset_identity
 from olheiro.db import connect_agent, session_cursor
@@ -126,7 +127,14 @@ def load_resources() -> AppResources:
         )
         previous_revision = st.session_state.get("semantic_revision")
         if previous_revision is not None and previous_revision != revision:
-            for key in ("history", "pending", "question_draft", "queued_question", "example"):
+            for key in (
+                "history",
+                "conversation",
+                "pending",
+                "question_draft",
+                "queued_question",
+                "example",
+            ):
                 st.session_state.pop(key, None)
         st.session_state.semantic_revision = revision
     previous = st.session_state.get("resource_connection")
@@ -136,6 +144,7 @@ def load_resources() -> AppResources:
             old_deps.con.close()
         for key in (
             "history",
+            "conversation",
             "pending",
             "queued_question",
             "question_draft",
@@ -171,3 +180,12 @@ def session_deps(resources: AppResources) -> AgentDeps:
     else:
         st.session_state.deps.glossary = resources.glossary
     return st.session_state.deps
+
+
+def session_conversation(resources: AppResources, deps: AgentDeps) -> Conversation:
+    """Contexto privado da sessão; não entra nos recursos compartilhados do processo."""
+    if "conversation" not in st.session_state:
+        st.session_state.conversation = Conversation()
+    conversation: Conversation = st.session_state.conversation
+    conversation.bind(deps, resources.cache.namespace)
+    return conversation

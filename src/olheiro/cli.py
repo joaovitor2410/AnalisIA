@@ -11,6 +11,7 @@ grava em workspace com a confirmação do usuário.
 
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import duckdb
@@ -30,7 +31,8 @@ from olheiro.agent import (
 from olheiro.cache import AnswerCache, ask_with_cache
 from olheiro.charts import build_figure, save_figure
 from olheiro.config import get_settings
-from olheiro.datasets import cache_revision
+from olheiro.conversation import Conversation
+from olheiro.datasets import cache_revision, database_revision
 from olheiro.db import WORKSPACE_CATALOG, WorkspaceInUseError, connect_agent
 from olheiro.errors import explain_model_failure
 from olheiro.semantic import load_glossary
@@ -43,10 +45,16 @@ PREVIEW_ROWS = 5
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="olheiro-ask", description="Pergunte aos dados.")
-    parser.add_argument("question", help="pergunta em português")
+    parser.add_argument("question", nargs="?", help="pergunta em português")
+    parser.add_argument(
+        "--chat", action="store_true", help="conversa local; /nova limpa e /sair encerra"
+    )
     parser.add_argument("--verbose", action="store_true", help="mostra as chamadas de ferramenta")
     parser.add_argument("--no-cache", action="store_true", help="ignora respostas guardadas")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not args.chat and not args.question:
+        parser.error("informe uma pergunta ou use --chat.")
+    return args
 
 
 def format_report(report: AgentReport, chart_path: Path | None) -> str:
@@ -90,11 +98,68 @@ def confirm_save(pending: PendingApproval, con: duckdb.DuckDBPyConnection) -> bo
         return False
 
 
+def run_question(
+    question: str,
+    deps: AgentDeps,
+    cache: AnswerCache | None,
+    conversation: Conversation | None,
+    model: Callable[[], Model],
+    runs: RunLog,
+    refresh_glossary: Callable[[], None],
+) -> AgentReport:
+    """Um turno, com construção do modelo só quando necessária e aprovação sempre atual."""
+    outcome: AgentReport | PendingApproval
+    with tracked(runs, question, "cli") as run:
+        context_key = conversation.cache_key() if conversation is not None else None
+        cached = cache.lookup(question, deps.con, context_key) if cache is not None else None
+        if cached is not None:
+            outcome = run.finish(cached)
+            if conversation is not None:
+                conversation.remember(question, cached)
+        elif cache is not None:
+            outcome = run.finish(
+                ask_with_cache(
+                    question,
+                    deps,
+                    cache,
+                    model(),
+                    conversation=conversation,
+                )
+            )
+        else:
+            outcome = run.finish(
+                ask(
+                    question,
+                    deps,
+                    model(),
+                    message_history=conversation.messages() if conversation is not None else None,
+                )
+            )
+    had_approval = isinstance(outcome, PendingApproval)
+    while isinstance(outcome, PendingApproval):
+        approved = confirm_save(outcome, deps.con)
+        refresh_glossary()  # uma regra pode mudar enquanto o usuário decide
+        with tracked(runs, question, "cli", phase="resume") as run:
+            outcome = run.finish(resume(outcome, approved, deps, model()))
+    if conversation is not None and (cache is None or had_approval):
+        conversation.remember(question, outcome)
+    return outcome
+
+
+def print_report(report: AgentReport, exports_dir: Path, verbose: bool) -> None:
+    chart_path = None
+    if report.output.chart is not None and report.evidence is not None:
+        chart_path = save_figure(build_figure(report.output.chart, report.evidence), exports_dir)
+    if verbose:
+        steps = describe_steps(report.messages) or ["(resposta do cache: nenhum passo)"]
+        print("Passos do agente:\n" + "\n".join(f"  {step}" for step in steps) + "\n")
+    print(format_report(report, chart_path))
+
+
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     pydantic_ai.BANNER_ENABLED = False  # a CLI é dona da própria saída
     settings = get_settings()
-    glossary = load_glossary(settings.glossary_path)
     setup_tracing(settings)
     runs = RunLog(settings.runs_path)
     try:
@@ -102,37 +167,70 @@ def main(argv: list[str] | None = None) -> None:
     except WorkspaceInUseError as error:
         sys.exit(str(error))
     with con:
-        deps = AgentDeps(con, glossary)
-        model: Model | None = None
-        try:
-            with tracked(runs, args.question, "cli") as run:
-                if args.no_cache:
-                    model = build_model(settings)
-                    outcome = run.finish(ask(args.question, deps, model))
+        deps = AgentDeps(con)
+        conversation = Conversation() if args.chat else None
+        data_revision = database_revision(settings)
+        active_model: Model | None = None
+
+        def model() -> Model:
+            nonlocal active_model
+            if active_model is None:
+                active_model = build_model(settings)
+            return active_model
+
+        def refresh_glossary() -> None:
+            current = (
+                settings.for_dataset(settings.olheiro_dataset)
+                if settings.olheiro_dataset is not None
+                else settings
+            )
+            deps.glossary = load_glossary(current.glossary_path)
+
+        question = args.question
+        if args.chat:
+            print("Conversa local: /nova limpa o contexto; /sair encerra.")
+        while True:
+            if question is None:
+                try:
+                    question = input("\nVocê: ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    break
+            if args.chat and question == "/sair":
+                break
+            if args.chat and question == "/nova":
+                assert conversation is not None
+                conversation.clear()
+                print("Nova exploração iniciada.")
+            elif question:
+                try:
+                    current = (
+                        settings.for_dataset(settings.olheiro_dataset)
+                        if settings.olheiro_dataset is not None
+                        else settings
+                    )
+                    refresh_glossary()
+                    namespace = cache_revision(current, data_revision)
+                    if conversation is not None:
+                        conversation.bind(deps, namespace)
+                    cache = (
+                        None if args.no_cache else AnswerCache(current.answer_cache_path, namespace)
+                    )
+                    report = run_question(
+                        question,
+                        deps,
+                        cache,
+                        conversation,
+                        model,
+                        runs,
+                        refresh_glossary,
+                    )
+                except (AgentRunError, FallbackExceptionGroup, ValueError) as error:
+                    message = f"Erro ao consultar o modelo. {explain_model_failure(error)}"
+                    if not args.chat:
+                        sys.exit(message)
+                    print(message)
                 else:
-                    cache = AnswerCache(settings.answer_cache_path, cache_revision(settings))
-                    cached = cache.lookup(args.question, con)
-                    if cached is not None:
-                        outcome = run.finish(cached)
-                    else:
-                        model = build_model(settings)
-                        outcome = run.finish(ask_with_cache(args.question, deps, cache, model))
-            while isinstance(outcome, PendingApproval):
-                approved = confirm_save(outcome, con)  # o tempo de decisão não entra na medida
-                with tracked(runs, args.question, "cli", phase="resume") as run:
-                    outcome = run.finish(resume(outcome, approved, deps, model))
-        except (AgentRunError, FallbackExceptionGroup, ValueError) as error:
-            # Falha da API (cota, 503 em todos os modelos) ou modelo que esgotou as retentativas.
-            sys.exit(f"Erro ao consultar o modelo. {explain_model_failure(error)}")
-
-    report = outcome
-    chart_path = None
-    if report.output.chart is not None and report.evidence is not None:
-        chart_path = save_figure(
-            build_figure(report.output.chart, report.evidence), settings.exports_dir
-        )
-
-    if args.verbose:
-        steps = describe_steps(report.messages) or ["(resposta do cache: nenhum passo)"]
-        print("Passos do agente:\n" + "\n".join(f"  {step}" for step in steps) + "\n")
-    print(format_report(report, chart_path))
+                    print_report(report, current.exports_dir, args.verbose)
+            if not args.chat:
+                break
+            question = None

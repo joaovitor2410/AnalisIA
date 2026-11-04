@@ -13,6 +13,7 @@ from streamlit.testing.v1 import AppTest
 
 from olheiro import mcp_server
 from olheiro.config import Settings
+from olheiro.conversation import Conversation
 from olheiro.datasets import import_dataset
 from olheiro.db import connect_agent
 from olheiro.semantic import Glossary
@@ -57,6 +58,7 @@ def test_editor_refreshes_context_without_reopening_database_or_resetting_quota(
     app.session_state["model_questions"] = 3
     app.session_state["history"] = ["resposta antiga"]
     app.session_state["pending"] = "aprovação antiga"
+    app.session_state["conversation"] = Conversation()
     app.selectbox(key="semantic-column").set_value("quantidade").run()
     app.text_area[0].set_value("Saldo disponível por produto")
     app.text_area[1].set_value("Estoque físico")
@@ -76,6 +78,7 @@ def test_editor_refreshes_context_without_reopening_database_or_resetting_quota(
     )
     assert app.session_state["model_questions"] == 3
     assert not app.session_state.get("pending") and not app.session_state.get("history")
+    assert app.session_state.get("conversation") is None
     app.button(key=f"quality-{stock.duckdb_path}-estoque").click().run()
     assert not app.exception
     assert any(metric.label == "Linhas duplicadas excedentes" for metric in app.metric)

@@ -3,6 +3,8 @@
 from pathlib import Path
 
 import pytest
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart, UserPromptPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RunUsage
 
 from olheiro import cli
@@ -58,3 +60,55 @@ def test_cli_requires_a_key_only_when_the_model_is_needed(
 ) -> None:
     with pytest.raises(SystemExit, match="GOOGLE_API_KEY não definida"):
         cli.main(args)
+
+
+@pytest.mark.parametrize("no_cache", [False, True])
+def test_cli_chat_continues_analysis_and_reset_removes_context(
+    cached_cli: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    no_cache: bool,
+) -> None:
+    received: list[list[str]] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        received.append(
+            [
+                str(part.content)
+                for message in messages
+                for part in message.parts
+                if isinstance(part, UserPromptPart | TextPart)
+            ]
+        )
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {
+                        "answerable": True,
+                        "answer": "Valor 42.",
+                        "sql": "SELECT valor FROM raw.vendas",
+                    },
+                )
+            ]
+        )
+
+    monkeypatch.setattr(cli, "build_model", lambda _: FunctionModel(respond))
+    questions = iter(["E qual o valor?", "/nova", "Outra análise", "/sair"])
+    monkeypatch.setattr("builtins.input", lambda _: next(questions))
+    cli.main(["--chat", "Total?", *(["--no-cache"] if no_cache else [])])
+    assert received[-2][0] == "Total?" and received[-2][-1] == "E qual o valor?"
+    assert received[-1] == ["Outra análise"]
+    assert "Nova exploração iniciada" in capsys.readouterr().out
+
+
+def test_cli_chat_can_end_at_eof_without_constructing_model(
+    cached_cli: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "build_model", lambda _: pytest.fail("Chamou o modelo"))
+
+    def eof(_: str) -> str:
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", eof)
+    cli.main(["--chat"])

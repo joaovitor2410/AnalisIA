@@ -97,6 +97,8 @@ nomes repetidos de colunas. `truncated=true` indica que o cliente deve agregar o
 
 As perguntas são independentes, sem histórico entre chamadas. Cada chamada usa e fecha seu
 cursor sobre a conexão blindada do processo, inclusive em falhas e consultas concorrentes.
+A memória da F9C pertence ao app e à CLI `--chat`; o MCP mantém o contrato independente,
+permitindo que o modelo do cliente administre o histórico sem compartilhar conversas no servidor.
 As perguntas de `ask_question` aparecem na página **Operação**, com origem **MCP**, e usam as
 mesmas configurações `OLHEIRO_TRACING` e `OLHEIRO_TRACE_CONTENT` da CLI e do app.
 SQL direto, perfis, recursos e prompts não entram nas métricas de perguntas ao agente.

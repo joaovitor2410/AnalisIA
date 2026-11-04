@@ -291,7 +291,83 @@ def test_new_exploration_preserves_quota_and_pinned_analysis(
     app.button(key="new-exploration").click().run()
     assert not app.exception and app.session_state["history"] == []
     assert app.session_state["model_questions"] == 3
+    assert app.session_state["conversation"].turn_count == 0
     assert len(resources.load_resources().dashboard.read().items) == 1
+
+
+def test_ui_continues_cached_analysis_and_new_exploration_clears_model_context(
+    app_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pydantic_ai.messages import TextPart, UserPromptPart
+
+    received: list[list[str]] = []
+    followup = "E quantos pontos em 2020?"
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        received.append(
+            [
+                str(part.content)
+                for message in messages
+                for part in message.parts
+                if isinstance(part, UserPromptPart | TextPart)
+            ]
+        )
+        fields: dict[str, object] = (
+            {
+                "answerable": True,
+                "answer": "Flamengo: 71 pontos.",
+                "sql": "SELECT team, points FROM raw.brasileirao WHERE season=2020 AND place=1",
+            }
+            if len(received) == 1
+            else {
+                "answerable": False,
+                "answer": "Qual competição e qual equipe você quer analisar?",
+            }
+        )
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, fields)])
+
+    monkeypatch.setattr(resources, "build_model", lambda _: FunctionModel(respond))
+    cache_answer(app_env)
+    app = page_app(run_ask_page).run()
+    app.chat_input[0].set_value(CACHED_QUESTION).run()
+    app.chat_input[0].set_value(followup).run()
+    assert not app.exception and not app.error
+    assert received[0][0] == CACHED_QUESTION and TITLES_SQL in received[0][1]
+    assert app.session_state["history"][-1].report.evidence.rows == [("Flamengo", 71)]
+    assert app.session_state["conversation"].turn_count == 2
+    assert followup not in app.pills(key="example").options
+    app.button(key="new-exploration").click().run()
+    app.chat_input[0].set_value(followup).run()
+    assert not app.exception and received[1] == [followup]
+    assert not app.session_state["history"][-1].report.output.answerable
+    assert app.session_state["model_questions"] == 2
+
+
+def test_ready_question_restarts_context_and_stays_free_after_a_continuation(
+    app_env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OLHEIRO_SESSION_QUESTION_LIMIT", "1")
+    model = scripted_model(
+        lambda info: ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {"answerable": True, "answer": "Confira.", "sql": TITLES_SQL},
+                )
+            ]
+        )
+    )
+    monkeypatch.setattr(resources, "build_model", lambda _: model)
+    cache_answer(app_env)
+    app = page_app(run_ask_page).run()
+    app.chat_input[0].set_value(CACHED_QUESTION).run()
+    app.chat_input[0].set_value("E os pontos?").run()
+    assert app.session_state["conversation"].turn_count == 2
+    app.pills(key="example").set_value(CACHED_QUESTION).run()
+    assert not app.exception and not app.error
+    assert app.session_state["history"][-1].report.from_cache
+    assert app.session_state["model_questions"] == 1
+    assert app.session_state["conversation"].turn_count == 1
 
 
 def test_dashboard_filters_without_changing_pinned_items(app_env: Path) -> None:

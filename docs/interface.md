@@ -27,7 +27,9 @@ compatibilidade com as integrações já configuradas.
 - **Começar:** cartões preparam perguntas usando uma tabela do catálogo atual. O rascunho pode
   ser editado ou descartado; só **Analisar pergunta** envia a solicitação ao agente.
 - **Continuidade:** Nova exploração limpa o histórico da sessão, preservando perguntas
-  contabilizadas e análises fixadas. Perguntas continuam independentes, sem memória de conversa.
+  contabilizadas e análises fixadas. Desde a F9C, limpa também a memória usada pelo modelo.
+  Até seis análises recentes e 16.000 caracteres ajudam a interpretar continuações; o rodapé
+  indica quantidade e corte. Perguntas prontas iniciam contexto novo. Veja [conversa](conversa.md).
 - **Evidências:** resposta, gráfico, tabela, SQL, passos e consumo continuam acessíveis. O CSV
   exporta as linhas da evidência exibida; o corte de resultados permanece indicado.
 - **Dashboard:** busca por título/pergunta e filtro entre indicadores, gráficos e tabelas.

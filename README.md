@@ -16,6 +16,7 @@ seus nomes técnicos; `uv run analisia` é a entrada principal do navegador.
 ## Capacidades
 
 - **Perguntar:** consultas SQL, insights, gráficos e aprovação humana para salvar resultados.
+- **Continuar uma análise:** contexto limitado por sessão no app e na CLI com `--chat`.
 - **Dashboard:** fixa análises e reexecuta o SQL sem chamar o modelo.
 - **Dados:** explora tabelas, glossário e perfis de colunas.
 - **Operação:** acompanha latência, requisições, tokens, custo equivalente e traces.
@@ -51,6 +52,7 @@ interface, o explorador, o dashboard e respostas já guardadas continuam dispon�
 |---|---|---|
 | Interface no navegador | `uv run analisia` | Inicia o Streamlit e mostra o endereço |
 | Pergunta no terminal | `uv run olheiro-ask --verbose "Qual região tem mais títulos?"` | Mostra resposta e evidências |
+| Conversa no terminal | `uv run olheiro-ask --chat` | Mantém contexto; `/nova` limpa e `/sair` encerra |
 | Integração MCP | `uv run olheiro-mcp` | Aguarda um cliente por stdin/stdout, sem abrir janela |
 | Testar MCP sem Gemini | `uv run python examples/mcp_client.py` | Inicia um cliente e consulta temporadas |
 
@@ -86,6 +88,8 @@ A **F9B foi implementada**: veja [qualidade e semântica dos dados](docs/qualida
 prévia, tipos reproduzíveis, diagnósticos e edição das regras. Catálogos grandes têm busca
 seletiva para o agente e o MCP. A [revisão de 04/11/2026](docs/auditoria-2026-11-04.md)
 validou essa entrega e avançou para avaliações de futebol, vendas e estoque.
+A **F9C** acrescenta [conversa com contexto](docs/conversa.md): faça uma pergunta completa
+e depois continue com “e em 2020?”, sempre com evidência própria para cada análise.
 
 ## Demo para visitantes
 
@@ -139,7 +143,9 @@ A [CI da F8B](https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772
 nos cenários pessoal e demo. A [CI da auditoria e F9A/F9A.1](https://github.com/joaovitor2410/AnalisIA/actions/runs/41632724779)
 também passou após o push de 03/11. A [CI da F9B](https://github.com/joaovitor2410/AnalisIA/actions/runs/41637039752)
 passou em 03/11, incluindo qualidade e contêineres pessoal/demo. A ampliação das avaliações
-de 04/11 foi validada localmente; sua CI depende de novo push autorizado.
+de 04/11 foi enviada no commit `94f5cca` e sua
+[CI passou](https://github.com/joaovitor2410/AnalisIA/actions/runs/41843227764).
+A F9C tem validação local; a nova imagem depende de seu próprio push e CI.
 
 ## Arquitetura
 
@@ -211,8 +217,12 @@ O comando apresenta estimativa e pede confirmação de custo. Testes com modelo 
 substituem a rodada real. Resultados são separados por suíte/modelo e incluem a revisão dos
 arquivos usados. O [guia de avaliações](docs/avaliacoes.md) detalha casos, execução e limites.
 
-Perguntas são independentes, sem memória de conversa. O cache invalida respostas quando a
-revisão dos dados/glossário ou a evidência muda. Dashboard, cache e registros pertencem à base
+O app e a CLI com `--chat` usam até seis análises recentes, com teto de 16.000 caracteres,
+para interpretar continuações. Nova exploração, troca de base ou mudança de semântica limpam
+o contexto. Perguntas prontas do app iniciam contexto novo; a CLI simples e o MCP continuam
+independentes. Histórico não autoriza gravações e cada resposta exige seu próprio SQL.
+O cache distingue contextos e invalida respostas quando a revisão dos dados/glossário ou a
+evidência muda. Dashboard, cache e registros pertencem à base
 no modo pessoal; traces da interface têm destino comum por processo. A demo usa estado por
 sessão, sem persistência entre sessões.
 As chaves do cache preservam sinais, acentos, maiúsculas e espaços internos: perguntas com

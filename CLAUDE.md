@@ -28,6 +28,10 @@ Em **04/11/2026**, nova varredura confirmou a F9B e sua CI verde (`0e20330`, exe
 offline da **F5 complementar**, com suítes de futebol, vendas e estoque (59 casos/44
 gabaritos SQL). A rodada paga permanece pendente; **F9C (contexto de conversa)** é a próxima
 fase funcional, após a revisão de fim de fase. Relatório: `docs/auditoria-2026-11-04.md`.
+Ainda em **04/11**, o autor autorizou o push e a próxima fase: `94f5cca` enviado a
+`origin/main`, CI `41843227764` aprovada (qualidade + contêiner pessoal/demo).
+**F9C entregue:** contexto curto por sessão no app e na CLI `--chat`, cache contextual e
+aprovações vinculadas à sessão/regras e de uso único. Guia: `docs/conversa.md`.
 - Funções: chat analítico com evidência e passos do agente; dashboard (fixar respostas, KPIs);
   explorador de dados; perguntas prontas via cache; importação/seleção de bases pessoais
   CSV/Parquet (F9A). Upload do visitante da demo continua fora do escopo.
@@ -167,6 +171,11 @@ Para instalar pacotes: `networksetup -setv6off Wi-Fi`, depois `uv add ...`, depo
 `networksetup -setv6automatic Wi-Fi`. Chamadas ao Gemini precisam rodar fora do sandbox do
 Claude Code.
 
+F9C (04/11/2026): contratos de `Agent.run_sync(message_history=..., usage=..., usage_limits=...)`,
+`ModelRequest`, `UserPromptPart`, `ModelResponse` e `TextPart` conferidos no Pydantic AI
+**2.59.0** instalado e na documentação oficial de histórico de mensagens. Streamlit **1.66.1**
+mantido. Sem dependências novas. Referência e limites em `docs/conversa.md`.
+
 ## Estrutura
 ```
 src/olheiro/config.py       configurações (Settings)
@@ -181,6 +190,7 @@ src/olheiro/agent.py        agente Pydantic AI: saída estruturada, validador, a
 src/olheiro/charts.py       ChartSpec (bar/line/metric), check_chart, figura Plotly
 src/olheiro/cli.py          comando olheiro-ask (--verbose, --no-cache)
 src/olheiro/cache.py        cache de respostas + ask_with_cache
+src/olheiro/conversation.py contexto limitado, pares completos e isolamento por sessão/revisão
 src/olheiro/dashboard.py    itens fixados (SQL + ChartSpec) e render_item
 src/olheiro/storage.py      JsonFile: modelo Pydantic em JSON com lock e escrita atômica
 src/olheiro/app.py          entrada do Streamlit (navegação + barra lateral)
@@ -214,6 +224,7 @@ evals/vendas.yaml           suíte de vendas (10 casos, 7 gabaritos SQL)
 evals/estoque.yaml          suíte de estoque (10 casos, 8 gabaritos SQL)
 evals/fixtures/inventory/   produtos, saldos, fornecedores, opções e regras sintéticos
 docs/avaliacoes.md         execução offline/real, critérios e limites do benchmark
+docs/conversa.md           contexto no app/CLI, cache por contexto e aprovações da F9C
 evals/results/              resultados por modelo + README comparativo
 learning/manual_loop.py     F1: loop do agente à mão com google-genai (material de estudo)
 tests/                      pytest (pythonpath inclui learning/; conftest isola tracing e logs)
@@ -420,6 +431,45 @@ data/exports/               exportações do agente (ignorado no Git)
   `uv run --locked olheiro-eval --suite vendas --validate-only` (também estoque/brasileirao).
   Próxima fase funcional: **F9C**, após revisão do autor. Rodada paga continua separada.
 
+- [x] **Fase 9C: conversa com contexto (04/11/2026).** Autor autorizou push da F5 complementar
+  e avanço. `94f5cca` enviado, com **270 testes** conferidos; CI remota aprovada:
+  https://github.com/joaovitor2410/AnalisIA/actions/runs/41843227764 (qualidade e ambos os
+  modos de contêiner). Esta autorização publica a fase anterior; a F9C fica em novo commit
+  local, aguardando os testes/liberação de fim de fase antes de outro push.
+  `Conversation` guarda até seis pares pergunta/AnalysisAnswer e 16.000 caracteres, com
+  descarte dos pares mais antigos e aviso na interface. Reconstitui pares textuais para
+  `message_history`; inclui SQL/insights/gráfico, não tabelas completas nem ferramentas,
+  retentativas, assinaturas antigas ou aprovações. Funciona após respostas do cache.
+  A nova análise continua obrigada a produzir e executar seu próprio SQL; na falta de
+  referente, instrução pede esclarecimento. O histórico visual pode exceder a janela enviada.
+  Memória em sessão, nunca em recursos globais; troca de conexão/base, semântica, namespace
+  ou permissão limpa o contexto. Nova exploração preserva quota/dashboard. Perguntas prontas
+  selecionadas ou digitadas reiniciam contexto e continuam gratuitas, mesmo após a quota.
+  Cache inclui hash do contexto efetivo, sem timestamps; entradas de continuação não aparecem
+  em perguntas prontas. Entradas antigas sem contexto continuam independentes; toda evidência
+  continua revalidada/reexecutada. Contexto não é restaurado entre sessões; cache/logs/traces
+  mantêm as políticas de persistência/conteúdo existentes. Demo preserva privacidade e limites.
+  CLI `--chat` tem `/nova`, `/sair`, EOF, modelo construído só na falta do cache e leitura das
+  regras a cada turno/decisão. `--no-cache` preserva o contexto. CLI simples e MCP seguem
+  independentes (o host MCP administra sua conversa). Sem histórico global no servidor MCP.
+  Aprovações vinculadas à conexão e ao glossário: outra sessão/regra/modo de leitura causa
+  `ApprovalContextError`; consumo único protegido por lock. Falha após consumir exige novo
+  pedido. Retomada preserva mensagens reais do provedor e consumo/limites acumulados da análise.
+  Pausas/falhas não entram na janela; conclusão após decisão adiciona só a análise final.
+  **290 testes offline**, também em cópia sem `.env` e sem chaves; Ruff lint/format e mypy
+  (40 módulos), build wheel/sdist e diagnóstico com workspace temporário. O diagnóstico
+  padrão identificou o workspace pessoal ocupado (PID 17232); a instância foi preservada.
+  Verificação real única: resposta inicial de 2019 em cache → "E em 2020?";
+  **Gemini 3.8 Flash, 2 requisições**, Flamengo/71 pontos, SQL próprio correto. Banco/cache
+  temporários, somente leitura, teto de quatro requisições e sem retentativas do SDK. Não
+  executa o benchmark real F5. Documentação em `docs/conversa.md`, README, interface/demo/MCP.
+  Rodar: `uv run --locked analisia` ou `uv run --locked olheiro-ask --chat`.
+  Testar: `uv run --locked pytest -q`, `uv run --locked ruff check .`,
+  `uv run --locked ruff format --check .`, `uv run --locked mypy`, `uv build --offline`,
+  `uv run --locked olheiro-check`. Docker ausente localmente; nova imagem depende de CI
+  após push da F9C. Próximos itens: rodada real F5 após faturamento/liberação e preparação
+  operacional/publicação F8C, com hospedagem e condições dos dados ainda por decidir.
+
 ## Pendências / em aberto
 - **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB
   recomenda isolamento de SO/contêiner). Para deploy (F8): rodar em contêiner sem rede de saída
@@ -433,13 +483,14 @@ data/exports/               exportações do agente (ignorado no Git)
   `OLHEIRO_SESSION_QUESTION_LIMIT` limita só o app Streamlit, não o MCP local. Configuração de
   clientes documentada, sem alterar arquivos do Claude automaticamente.
 - **Para a publicação (F8C):** decidir hospedagem/acesso e condições dos dados; validar a imagem
-  desta entrega após novo push (F9B já verde em `41637039752`); limites no provedor se
+  F9C após novo push (F5 complementar já verde em `41843227764`); limites no provedor se
   habilitar perguntas. F5 real permanece pendente de faturamento/liberação, embora a
   preparação offline multidomínio esteja concluída.
   A F8B já prepara exemplos versionados e estado por sessão. O orçamento é por processo:
   reinícios/replicação precisam ser considerados na hospedagem.
-- **Limitações conhecidas:** perguntas independentes (sem memória de conversa: "e em 2020?" não
-  funciona). F9A invalida caches de outra revisão; cache legado é regenerado. JSONs ainda
+- **Limitações conhecidas:** F9C mantém contexto limitado no app/CLI `--chat`; não persiste
+  conversas nem recupera referências fora da janela automaticamente. CLI simples e MCP seguem
+  independentes. F9A invalida caches de outra revisão; cache legado é regenerado. JSONs ainda
   usam locks por objeto/thread, sem coordenação entre processos/réplicas. UI mantém conexões
   das bases selecionadas no cache; medir ciclo de vida/memória com muitas bases. F9B adicionou
   prévia e tipos/codificações; significado de negócio, chaves compostas e acurácia real
