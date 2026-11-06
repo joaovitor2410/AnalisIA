@@ -31,7 +31,10 @@ A matriz pessoal/demo passou na
 A F9B e a ampliação das avaliações também passaram; a última CI antes da F9C é a
 [execução 41843227764](https://github.com/joaovitor2410/AnalisIA/actions/runs/41843227764).
 A [CI da F9C](https://github.com/joaovitor2410/AnalisIA/actions/runs/41865983452) passou após
-o push de `071dd2d`. A nova imagem da F8C.1 depende de seu próprio push e CI.
+o push de `071dd2d`. A F8C.1 também passou na
+[CI 42211982307](https://github.com/joaovitor2410/AnalisIA/actions/runs/42211982307).
+As correções de 06/11 aguardam novo push/CI. O autor manteve a demo pública e pediu uma
+[comparação de hospedagens](hospedagem.md) antes de escolher; não houve publicação.
 
 ## O que fica disponível
 

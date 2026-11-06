@@ -116,9 +116,11 @@ também passou no commit `845767d`, na
 [execução 40502502772](https://github.com/joaovitor2410/AnalisIA/actions/runs/40502502772).
 As alterações de ingestão, qualidade e conversa até a F9C passaram na
 [execução 41865983452](https://github.com/joaovitor2410/AnalisIA/actions/runs/41865983452).
-A F8C.1 acrescenta persistência de quota e rotação ao smoke; sua imagem precisa de nova CI
-após push autorizado. Docker segue ausente neste Mac; a evidência de execução da infraestrutura
-vem do runner Linux.
+A F8C.1 acrescentou persistência de quota e rotação ao smoke e passou na
+[CI 42211982307](https://github.com/joaovitor2410/AnalisIA/actions/runs/42211982307).
+As correções de 06/11 aguardam novo push/CI. Docker segue ausente neste Mac; a evidência
+de execução da infraestrutura vem do runner Linux. A [F8C.2](hospedagem.md) compara opções
+de hospedagem para a demo pública, sem contratar ou publicar antes da escolha do autor.
 Uploads são encaminhados sem buffering de requisição no NGINX, para não ocupar todo o
 tmpfs de 32 MB do proxy com um arquivo permitido de até 50 MB.
 

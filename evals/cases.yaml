@@ -4,6 +4,7 @@
 #   golden_sql: consulta de gabarito. O resultado da evidência do agente precisa conter as mesmas
 #               colunas/valores (ver olheiro.evaluation.evidence_matches).
 #   mentions: termos que a resposta precisa citar ("a|b" = qualquer um deles; sem acento/caixa).
+#   percentage_columns: índices (a partir de zero) do gabarito que aceitam escala 1↔100.
 # Os gabaritos foram conferidos no banco em 2026-10-22; um teste reexecuta todos.
 name: olheiro
 cases:
@@ -118,11 +119,11 @@ cases:
   # --- regras do glossário: eras, rebaixamento, pontuação oficial ---
   - name: melhor_aproveitamento
     inputs: Qual campeão teve o melhor aproveitamento desde 2003?
-    metadata: {category: glossario, expect: answer, mentions: [Flamengo],
+    metadata: {category: glossario, expect: answer, mentions: [Flamengo], percentage_columns: [2],
                golden_sql: "SELECT season, team, round(100.0 * points / (played * 3), 2) FROM raw.brasileirao WHERE place = 1 QUALIFY rank() OVER (ORDER BY points / (played * 3) DESC) = 1"}
   - name: cruzeiro_2003_vs_flamengo_2019
     inputs: Compare o desempenho do Cruzeiro campeão de 2003 com o do Flamengo campeão de 2019.
-    metadata: {category: glossario, expect: answer, mentions: [aproveitamento],
+    metadata: {category: glossario, expect: answer, mentions: [aproveitamento], percentage_columns: [2],
                golden_sql: "SELECT season, team, round(100.0 * points / (played * 3), 2) FROM raw.brasileirao WHERE (season = 2003 AND team = 'Cruzeiro') OR (season = 2019 AND team = 'Flamengo')"}
   - name: rebaixados_2019
     inputs: Quais times foram rebaixados em 2019?

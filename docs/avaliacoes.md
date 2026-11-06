@@ -74,7 +74,10 @@ anteriores sem identificação de suíte são lidos como Brasileirão.
 
 - **Comportamento:** respondeu, recusou ou se protegeu conforme o caso.
 - **Evidência:** linhas completas equivalentes ao gabarito, com correspondência entre colunas
-  e preservação de multiplicidade. Tolera arredondamento e escala percentual.
+  e preservação de multiplicidade. Tolera arredondamento; escala percentual só é aceita
+  nas colunas indicadas em `metadata.percentage_columns` (índices do gabarito a partir de zero).
+  Exemplo: `percentage_columns: [2]` para o percentual na terceira coluna. Valores monetários
+  e contagens não recebem conversão automática 1↔100. Nomes não latinos são preservados.
 - **Menções:** termos esperados quando especificados pelo caso.
 - **Ancoragem:** números da resposta presentes nos dados retornados ou na pergunta;
   datas ISO e identificadores numéricos textuais também entram na conferência.

@@ -88,6 +88,9 @@ A **F9B foi implementada**: veja [qualidade e semântica dos dados](docs/qualida
 prévia, tipos reproduzíveis, diagnósticos e edição das regras. Catálogos grandes têm busca
 seletiva para o agente e o MCP. A [revisão de 04/11/2026](docs/auditoria-2026-11-04.md)
 validou essa entrega e avançou para avaliações de futebol, vendas e estoque.
+Uma [nova varredura em 06/11](docs/auditoria-2026-11-06.md) corrigiu casos de quota,
+leitura de traces e avaliação da evidência. O autor manteve a demo pública; as
+[opções de hospedagem](docs/hospedagem.md) estão preparadas para sua escolha.
 A **F9C** acrescenta [conversa com contexto](docs/conversa.md): faça uma pergunta completa
 e depois continue com “e em 2020?”, sempre com evidência própria para cada análise.
 
@@ -146,7 +149,9 @@ passou em 03/11, incluindo qualidade e contêineres pessoal/demo. A ampliação 
 de 04/11 foi enviada no commit `94f5cca` e sua
 [CI passou](https://github.com/joaovitor2410/AnalisIA/actions/runs/41843227764).
 A [CI da F9C](https://github.com/joaovitor2410/AnalisIA/actions/runs/41865983452) também passou
-após o push de `071dd2d`. A F8C.1 tem validação local; sua imagem depende de novo push e CI.
+após o push de `071dd2d`. A [CI da F8C.1](https://github.com/joaovitor2410/AnalisIA/actions/runs/42211982307)
+passou após o push de `0a66018`. As correções de 06/11 têm validação local e aguardam
+seu próprio push/CI. Nenhum provedor foi contratado nem a demo publicada.
 
 ## Arquitetura
 

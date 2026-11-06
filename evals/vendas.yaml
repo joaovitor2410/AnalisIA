@@ -30,6 +30,7 @@ cases:
     metadata:
       category: proporcao
       expect: answer
+      percentage_columns: [0]
       golden_sql: "SELECT 100.0 * count(*) FILTER (WHERE status = 'cancelado') / count(*) FROM raw.orders"
   - name: faturamento_diario
     inputs: Como evoluiu o faturamento realizado por dia?

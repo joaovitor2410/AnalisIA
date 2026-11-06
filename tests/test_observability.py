@@ -1,6 +1,7 @@
 """Testes da observabilidade: árvore de spans, registro de execuções, privacidade e a página
 Operação. Usam um exportador em memória e um modelo roteirizado (sem rede, sem cota)."""
 
+import json
 from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
@@ -171,6 +172,37 @@ def test_oversized_span_fails_export_without_logging_private_attributes(
     exporter = JsonLinesSpanExporter(tmp_path / "traces.jsonl", max_bytes=10, backup_count=1)
     assert exporter.export(memory.get_finished_spans()) == SpanExportResult.FAILURE
     assert "dado privado" not in caplog.text
+
+
+def test_trace_reader_skips_incomplete_or_invalid_spans_and_bounds_cycles(tmp_path: Path) -> None:
+    trace_id = "a" * 32
+    good = {
+        "name": "válido",
+        "context": {"trace_id": f"0x{trace_id}", "span_id": "root"},
+        "parent_id": None,
+        "start_time": "2026-11-06T10:00:00+00:00",
+        "end_time": "2026-11-06T10:00:01+00:00",
+        "attributes": {},
+    }
+    broken = [
+        {"context": {"trace_id": f"0x{trace_id}"}},
+        {"context": None, "id": f"0x{trace_id}"},
+        {**good, "start_time": "data inválida"},
+        {**good, "start_time": "2026-11-06T10:00:00"},
+        {**good, "end_time": "2026-11-06T09:00:00+00:00"},
+        {**good, "attributes": "formato inválido"},
+        {**good, "parent_id": 123},
+    ]
+    path = tmp_path / "traces.jsonl"
+    path.write_text("\n".join(json.dumps(span) for span in [*broken, good]) + "\n")
+    views = read_trace(path, trace_id)
+    assert len(views) == 1 and views[0].name == "válido" and views[0].depth == 0
+    cycle = [
+        {**good, "context": {"trace_id": f"0x{trace_id}", "span_id": name}, "parent_id": parent}
+        for name, parent in [("a", "b"), ("b", "a")]
+    ]
+    path.write_text("\n".join(json.dumps(span) for span in cycle) + "\n")
+    assert [view.depth for view in read_trace(path, trace_id)] == [1, 1]
 
 
 def test_cost_accepts_provider_prefix_and_unknown_models() -> None:

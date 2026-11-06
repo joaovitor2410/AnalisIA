@@ -15,7 +15,7 @@ import atexit
 import json
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -128,35 +128,53 @@ class SpanView:
         return (self.end - self.start).total_seconds()
 
 
+def parse_span(line: str, wanted: str) -> SpanView | None:
+    """Valida também a estrutura: JSON válido pode conter um span incompleto/incompatível."""
+    try:
+        span = json.loads(line)
+        if span["context"]["trace_id"] != wanted:
+            return None
+        name, span_id, parent = span["name"], span["context"]["span_id"], span["parent_id"]
+        attributes = span.get("attributes")
+        if attributes is None:
+            attributes = {}
+        if (
+            not isinstance(name, str)
+            or not name
+            or not isinstance(span_id, str)
+            or not span_id
+            or (parent is not None and not isinstance(parent, str))
+            or not isinstance(attributes, dict)
+        ):
+            return None
+        start, end = (
+            datetime.fromisoformat(span["start_time"]),
+            datetime.fromisoformat(span["end_time"]),
+        )
+        if start.utcoffset() is None or end.utcoffset() is None or end < start:
+            return None
+        return SpanView(name, span_id, parent, start, end, 0, attributes)
+    except (ValueError, TypeError, KeyError):
+        return None
+
+
 def read_trace(path: Path, trace_id: str) -> list[SpanView]:
-    """Os spans de um trace gravado pelo JsonLinesSpanExporter, em ordem de início."""
+    """Lê spans válidos dos arquivos retidos; linha ruim não interrompe a página Operação."""
     wanted = f"0x{trace_id}"  # no arquivo o id vem com prefixo; no RunRecord, sem
-    raw = []
+    spans = {}
     for line in JsonLinesFile(path).read():
-        if wanted not in line:
-            continue
-        try:
-            span = json.loads(line)
-        except json.JSONDecodeError:
-            continue  # linha cortada: ignora
-        if span["context"]["trace_id"] == wanted:
-            raw.append(span)
-    parents: dict[str, str | None] = {span["context"]["span_id"]: span["parent_id"] for span in raw}
+        if wanted in line and (span := parse_span(line, wanted)) is not None:
+            spans[span.span_id] = span
 
     def depth(span_id: str) -> int:
-        parent = parents.get(span_id)
-        return 1 + depth(parent) if parent is not None and parent in parents else 0
+        seen = {span_id}
+        parent = spans[span_id].parent_id
+        result = 0
+        while parent is not None and parent in spans and parent not in seen:
+            seen.add(parent)
+            result += 1
+            parent = spans[parent].parent_id
+        return result
 
-    views = [
-        SpanView(
-            name=span["name"],
-            span_id=span["context"]["span_id"],
-            parent_id=span["parent_id"],
-            start=datetime.fromisoformat(span["start_time"]),
-            end=datetime.fromisoformat(span["end_time"]),
-            depth=depth(span["context"]["span_id"]),
-            attributes=span.get("attributes") or {},
-        )
-        for span in raw
-    ]
+    views = [replace(span, depth=depth(span.span_id)) for span in spans.values()]
     return sorted(views, key=lambda view: view.start)

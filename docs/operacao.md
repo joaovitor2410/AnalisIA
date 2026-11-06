@@ -120,8 +120,11 @@ Esta fase não chama o Gemini.
 
 A F9C foi enviada no commit `071dd2d`; sua
 [CI passou](https://github.com/joaovitor2410/AnalisIA/actions/runs/41865983452) em qualidade
-e nos contêineres pessoal/demo. A imagem desta F8C.1 depende de seu próprio push e CI;
-Docker continua indisponível no Mac de desenvolvimento.
+e nos contêineres pessoal/demo. A F8C.1 também passou após o push de `0a66018`, na
+[CI 42211982307](https://github.com/joaovitor2410/AnalisIA/actions/runs/42211982307).
+A [varredura de 06/11](auditoria-2026-11-06.md) acrescenta rejeição de quota consumida sem
+data e leitura tolerante a spans com estrutura inválida/ciclos. Essas correções aguardam
+novo push/CI. Docker continua indisponível no Mac de desenvolvimento.
 
 ## O que continua pendente
 

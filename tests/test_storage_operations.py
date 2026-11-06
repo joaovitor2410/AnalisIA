@@ -232,7 +232,10 @@ def test_budget_renews_on_next_utc_day_but_rejects_a_clock_rollback(
         QuestionBudget(1, path).take()
 
 
-@pytest.mark.parametrize("content", ['{"used":', '{"answers": {}}', '{"used": -1}'])
+@pytest.mark.parametrize(
+    "content",
+    ['{"used":', '{"answers": {}}', '{"used": -1}', '{"day": null, "used": 10}', '{"used": 1}'],
+)
 def test_unreadable_or_incompatible_budget_never_authorizes_a_request(
     tmp_path: Path, content: str
 ) -> None:

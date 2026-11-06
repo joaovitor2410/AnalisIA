@@ -108,6 +108,18 @@ def test_invalid_limits_fail_before_model(args: list[str]) -> None:
         (
             "vendas",
             "faturamento_realizado",
+            "SELECT sum(amount)*100 FROM raw.orders WHERE status='concluido'",
+            False,
+        ),
+        (
+            "vendas",
+            "participacao_cancelados",
+            "SELECT 1.0*count(*) FILTER (WHERE status='cancelado')/count(*) FROM raw.orders",
+            True,
+        ),
+        (
+            "vendas",
+            "faturamento_realizado",
             "SELECT sum(amount) FROM raw.orders WHERE status='concluido'",
             True,
         ),

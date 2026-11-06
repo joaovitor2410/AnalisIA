@@ -36,6 +36,11 @@ Na sequência, o autor autorizou o push da F9C e a próxima fase. `071dd2d` foi 
 CI `41865983452` aprovada nos três jobs. A **F8C.1** prepara a operação local: JSONs com
 transações entre processos, quota diária UTC persistente da demo e rotação dos logs/traces.
 Hospedagem, autenticação/acesso e publicação permanecem por definir. Guia: `docs/operacao.md`.
+Em **06/11/2026**, o autor autorizou push e nova varredura: `0a66018` enviado, CI
+`42211982307` aprovada. Auditoria corrigiu quota sem período, traces inválidos/cíclicos e
+falsos positivos de escala/Unicode nos avaliadores. O autor escolheu **manter a demo pública
+e receber opções de hospedagem para escolher**. F8C.2 prepara essa comparação, sem contratar
+nem publicar. Relatório: `docs/auditoria-2026-11-06.md`; opções: `docs/hospedagem.md`.
 - Funções: chat analítico com evidência e passos do agente; dashboard (fixar respostas, KPIs);
   explorador de dados; perguntas prontas via cache; importação/seleção de bases pessoais
   CSV/Parquet (F9A). Upload do visitante da demo continua fora do escopo.
@@ -230,6 +235,7 @@ evals/fixtures/inventory/   produtos, saldos, fornecedores, opções e regras si
 docs/avaliacoes.md         execução offline/real, critérios e limites do benchmark
 docs/conversa.md           contexto no app/CLI, cache por contexto e aprovações da F9C
 docs/operacao.md           coordenação de arquivos, quota persistente e rotação local (F8C.1)
+docs/hospedagem.md         comparação para a escolha da hospedagem da demo pública (F8C.2)
 evals/results/              resultados por modelo + README comparativo
 learning/manual_loop.py     F1: loop do agente à mão com google-genai (material de estudo)
 tests/                      pytest (pythonpath inclui learning/; conftest isola tracing e logs)
@@ -509,6 +515,37 @@ data/exports/               exportações do agente (ignorado no Git)
   sem disco comum, política de backup/remoção/versões semânticas e publicação F8C. Rodada
   real F5 e condições de redistribuição dos dados continuam pendentes próprias.
 
+- [x] **Varredura e F8C.2: opções de hospedagem (06/11/2026).** Autor autorizou push da
+  F8C.1 e avanço condicionado à revisão. `0a66018` enviado após **309 testes**, Ruff e mypy;
+  CI verde: https://github.com/joaovitor2410/AnalisIA/actions/runs/42211982307.
+  Revisão geral encontrou falhas sem cobertura inicial: quota com consumo mas sem data era
+  renovada; span incompleto/datas inválidas ou ciclo podia interromper Operação; avaliador
+  aceitava escala 1↔100 em dinheiro/contagens; normalização apagava nomes não latinos.
+  Corrigidos antes da preparação para publicação. `BudgetState` valida consumo/período e
+  preserva o arquivo incompatível. Traces validam estrutura/tipos/datas com fuso; linhas
+  inválidas são ignoradas e ciclos têm percurso limitado, sem recursão. Avaliação conserva
+  Unicode e só permite escala percentual nos índices declarados em `percentage_columns`.
+  Três casos percentuais atualizados; gabarito valida índices antes de chamadas pagas.
+  **317 testes**, também em cópia sem `.env`/chaves; Ruff lint/format, mypy (40 módulos),
+  diagnóstico com workspace temporário, 59 casos/44 gabaritos offline, smoke de ingestão
+  pessoal/demo e build wheel/sdist aprovados. Sem Gemini, dependência nova ou migração.
+  Durante a revisão, autor confirmou: **manter a demo pública e preparar opções para ele
+  escolher**. Comparação em `docs/hospedagem.md`, com preços/fontes oficiais de 06/11:
+  VPS Linux/Compose (referência DigitalOcean 2 vCPU/4 GiB, US$ 24/mês), Railway Hobby
+  (mínimo US$ 5 com créditos/consumo variável), Render (cenário de três serviços/disco
+  ≈US$ 39,25/mês) e Community Cloud (hospedagem gratuita, candidata a exemplos sem modelo).
+  VPS é a recomendação de compatibilidade com a arquitetura atual, não escolha do autor
+  nem benchmark. PaaS precisa provar rede/permissões/limites equivalentes; Community Cloud
+  não garante persistência local para a quota atual. Sem conta, cobrança, domínio ou deploy.
+  A escolha do provedor e as condições dos dados públicos seguem pendentes. Relatório em
+  `docs/auditoria-2026-11-06.md`; contrato percentual em `docs/avaliacoes.md` atualizado.
+  Correções/decisão preparadas em commit local para revisão, sem push junto com o commit.
+  Rodar: `uv run --locked analisia`. Testar: `uv run --locked pytest -q`,
+  `uv run --locked ruff check .`, `uv run --locked ruff format --check .`,
+  `uv run --locked mypy`, `uv build --offline`, `uv run --locked olheiro-check` e
+  `uv run --locked olheiro-eval --suite vendas --validate-only` (também estoque/brasileirao).
+  Próxima implementação: preparar o destino escolhido e validar piloto antes da publicação.
+
 ## Pendências / em aberto
 - **Segurança residual:** as camadas são defesa em profundidade, não sandbox (a doc do DuckDB
   recomenda isolamento de SO/contêiner). Para deploy (F8): rodar em contêiner sem rede de saída
@@ -521,8 +558,9 @@ data/exports/               exportações do agente (ignorado no Git)
   por elicitation ficam para uma evolução futura; não há aprovação por argumento do modelo.
   `OLHEIRO_SESSION_QUESTION_LIMIT` limita só o app Streamlit, não o MCP local. Configuração de
   clientes documentada, sem alterar arquivos do Claude automaticamente.
-- **Para a publicação (F8C):** decidir hospedagem/acesso e condições dos dados; validar a imagem
-  F8C.1 após novo push (F9C já verde em `41865983452`); limites no provedor se
+- **Para a publicação (F8C):** autor manteve a demo pública; escolher hospedagem entre as
+  opções de `docs/hospedagem.md` e resolver condições dos dados. Validar imagem das correções
+  de 06/11 após novo push (F8C.1 já verde em `42211982307`); limites no provedor se
   habilitar perguntas. F5 real permanece pendente de faturamento/liberação, embora a
   preparação offline multidomínio esteja concluída.
   A F8B prepara exemplos versionados e estado por sessão. F8C.1 persiste quota diária no

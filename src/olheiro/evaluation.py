@@ -20,11 +20,11 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import duckdb
 import pydantic_ai
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_ai.exceptions import AgentRunError, FallbackExceptionGroup
 from pydantic_ai.models import Model
 from pydantic_evals import Dataset, increment_eval_metric
@@ -55,6 +55,7 @@ class CaseMeta(BaseModel):
     expect: Literal["answer", "refuse", "safe"]
     golden_sql: str | None = None
     mentions: list[str] = []
+    percentage_columns: list[Annotated[int, Field(ge=0)]] = []
 
 
 def meta(metadata: CaseMeta | None) -> CaseMeta:
@@ -94,8 +95,9 @@ def load_cases(path: Path = CASES_PATH) -> EvalDataset:
 
 def plain(text: str) -> str:
     """Sem acento, minúsculo e sem espaços nas pontas: 'Grêmio ' -> 'gremio'."""
-    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
-    return ascii_text.casefold().strip()
+    normalized = unicodedata.normalize("NFKD", text)
+    letters = "".join(char for char in normalized if not unicodedata.combining(char))
+    return letters.casefold().strip()
 
 
 def as_number(value: object) -> float | None:
@@ -116,27 +118,28 @@ def close(a: float, b: float) -> bool:
 
 
 def same_values(expected: Sequence[object], got: Sequence[object]) -> bool:
-    """Mesmos valores, em qualquer ordem. Números aceitam escala de porcentagem (0,79 x 79)."""
+    """Mesmos valores, em qualquer ordem, sem alterar a unidade de medidas comuns."""
     if len(expected) != len(got):
         return False
     expected_numbers, got_numbers = all_numbers(expected), all_numbers(got)
     if expected_numbers is not None and got_numbers is not None:
-        for scale in (1, 100, 0.01):
-            scaled = sorted(number * scale for number in got_numbers)
-            if all(close(a, b) for a, b in zip(scaled, sorted(expected_numbers), strict=True)):
-                return True
-        return False
+        return all(
+            close(a, b) for a, b in zip(sorted(got_numbers), sorted(expected_numbers), strict=True)
+        )
     return sorted(plain(str(value)) for value in expected) == sorted(
         plain(str(value)) for value in got
     )
 
 
-def evidence_matches(golden: QueryResult, got: QueryResult) -> tuple[bool, str]:
+def evidence_matches(
+    golden: QueryResult, got: QueryResult, *, percentage_columns: Sequence[int] = ()
+) -> tuple[bool, str]:
     """Execução equivalente: mesmo número de linhas e cada coluna do gabarito presente.
 
     Colunas extras do agente são aceitas (ex.: ele mostrou também os pontos); nomes de coluna
     e ordem das linhas não importam. Cada coluna tem um correspondente distinto e os valores
-    precisam continuar associados à mesma linha, inclusive nas conversões de porcentagem.
+    precisam continuar associados à mesma linha. Conversão 1↔100 só é aceita nas colunas
+    percentuais declaradas pelo caso, nunca automaticamente em dinheiro ou contagens.
     """
     if len(got.rows) != len(golden.rows):
         return False, f"{len(got.rows)} linhas; o gabarito tem {len(golden.rows)}"
@@ -150,7 +153,7 @@ def evidence_matches(golden: QueryResult, got: QueryResult) -> tuple[bool, str]:
             column = [row[column_index] for row in got.rows]
             expected_numbers, got_numbers = all_numbers(expected), all_numbers(column)
             if expected_numbers is not None and got_numbers is not None:
-                for scale in (1, 100, 0.01):
+                for scale in (1, 100, 0.01) if index in percentage_columns else (1,):
                     if all(
                         close(a, b)
                         for a, b in zip(
@@ -310,7 +313,11 @@ class EvidenceMatches(Evaluator[str, EvalOutput, CaseMeta]):
             return {}
         if not ctx.output.columns:
             return {"evidencia": EvaluationReason(False, "sem evidência")}
-        ok, reason = evidence_matches(golden, ctx.output.evidence())
+        ok, reason = evidence_matches(
+            golden,
+            ctx.output.evidence(),
+            percentage_columns=meta(ctx.metadata).percentage_columns,
+        )
         return {"evidencia": EvaluationReason(ok, reason)}
 
 
@@ -431,6 +438,8 @@ def golden_results(dataset: EvalDataset, con: duckdb.DuckDBPyConnection) -> dict
         if metadata.golden_sql:
             check_query(metadata.golden_sql)
             result = query_rows(con, metadata.golden_sql, max_rows=51)
+            if any(index >= len(result.columns) for index in metadata.percentage_columns):
+                raise ValueError(f"{case.name}: coluna percentual inexistente no gabarito.")
             if len(result.rows) > 50:
                 raise ValueError(f"{case.name}: gabarito excede o limite de 50 linhas do agente.")
             results[case.name] = result

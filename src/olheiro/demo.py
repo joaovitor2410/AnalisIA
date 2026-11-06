@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import duckdb
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_ai.usage import RunUsage
 
 from olheiro.agent import AnalysisAnswer, build_report
@@ -48,6 +48,13 @@ class BudgetState(BaseModel):
     model_config = ConfigDict(extra="forbid")
     day: date | None = None
     used: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def check_period(self) -> "BudgetState":
+        """Um contador consumido sem período não pode ser tratado como quota nova."""
+        if self.day is None and self.used > 0:
+            raise ValueError("Quota consumida sem data de referência.")
+        return self
 
 
 class BudgetUnavailableError(RuntimeError):

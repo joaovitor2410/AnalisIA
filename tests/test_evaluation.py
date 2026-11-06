@@ -80,7 +80,7 @@ def test_evidence_matches_ignores_order_names_and_extra_columns(got: QueryResult
 
 def test_evidence_matches_accepts_percentage_scale_and_display_rounding() -> None:
     golden = QueryResult(["aproveitamento"], [(78.95,)])
-    assert evidence_matches(golden, QueryResult(["a"], [(0.789473,)]))[0]
+    assert evidence_matches(golden, QueryResult(["a"], [(0.789473,)]), percentage_columns=[0])[0]
     assert evidence_matches(golden, QueryResult(["a"], [(78.9,)]))[0]
     assert not evidence_matches(golden, QueryResult(["a"], [(72.46,)]))[0]
 
@@ -103,8 +103,25 @@ def test_evidence_matches_preserves_duplicate_rows_and_column_multiplicity() -> 
 
 def test_evidence_matches_keeps_percentages_paired_with_entities() -> None:
     golden = QueryResult(["nome", "percentual"], [("A", 78.95), ("B", 50.0)])
-    assert evidence_matches(golden, QueryResult(["p", "n"], [(0.5, "B"), (0.789473, "A")]))[0]
-    assert not evidence_matches(golden, QueryResult(["p", "n"], [(0.789473, "B"), (0.5, "A")]))[0]
+    assert evidence_matches(
+        golden, QueryResult(["p", "n"], [(0.5, "B"), (0.789473, "A")]), percentage_columns=[1]
+    )[0]
+    assert not evidence_matches(
+        golden, QueryResult(["p", "n"], [(0.789473, "B"), (0.5, "A")]), percentage_columns=[1]
+    )[0]
+
+
+@pytest.mark.parametrize("wrong", [46040, 4.604])
+def test_evidence_never_rescales_money_as_a_percentage(wrong: float) -> None:
+    assert not evidence_matches(
+        QueryResult(["valor"], [(460.4,)]), QueryResult(["faturamento"], [(wrong,)])
+    )[0]
+
+
+def test_evidence_preserves_non_latin_names_instead_of_erasing_them() -> None:
+    assert not evidence_matches(
+        QueryResult(["cidade"], [("東京",)]), QueryResult(["cidade"], [("大阪",)])
+    )[0]
 
 
 def test_evidence_matches_distinguishes_nulls_from_text() -> None:
