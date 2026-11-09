@@ -25,6 +25,7 @@ from olheiro.errors import explain_model_failure
 from olheiro.pricing import cost_usd
 from olheiro.storage import DEFAULT_LOG_BACKUP_COUNT, DEFAULT_LOG_MAX_BYTES, JsonLines
 from olheiro.tracing import content_enabled, tracer
+from olheiro.usage_tracking import UsageCapture, capture_usage
 
 type Source = Literal["app", "cli", "eval", "mcp"]
 type Phase = Literal["ask", "resume"]
@@ -48,6 +49,7 @@ class RunRecord(BaseModel):
     seconds: float
     error: str | None = None
     trace_id: str | None = None
+    usage_status: Literal["complete", "partial", "unknown"] = "unknown"
 
 
 class RunLog:
@@ -119,16 +121,28 @@ def tracked(log: RunLog, question: str, source: Source, phase: Phase = "ask") ->
     attributes: dict[str, str] = {"olheiro.source": source, "olheiro.phase": phase}
     if content_enabled() and log.include_content:
         attributes["olheiro.question"] = question
-    with tracer().start_as_current_span("olheiro.pergunta", attributes=attributes) as span:
+    with (
+        capture_usage() as usage,
+        tracer().start_as_current_span("olheiro.pergunta", attributes=attributes) as span,
+    ):
         try:
             yield tracking
         except Exception as error:
             span.set_status(Status(StatusCode.ERROR, type(error).__name__))
-            log.append(error_record(run, error, perf_counter() - started, trace_id_of(span)))
+            log.append(error_record(run, error, perf_counter() - started, trace_id_of(span), usage))
             raise
         if tracking.outcome is None:
             return
         record = outcome_record(run, tracking.outcome, perf_counter() - started, trace_id_of(span))
+        if usage.usage is not None:
+            # A retomada usa RunUsage acumulado; cada linha registra apenas sua fase.
+            record.requests, record.input_tokens, record.output_tokens, record.tool_calls = (
+                usage.totals()
+            )
+            if record.model is None and len(usage.models) == 1:
+                record.model = next(iter(usage.models))
+            if record.model and not record.from_cache:
+                record.cost_usd = cost_usd(record.model, record.input_tokens, record.output_tokens)
         span.set_attributes(
             {
                 "olheiro.outcome": record.outcome,
@@ -140,8 +154,14 @@ def tracked(log: RunLog, question: str, source: Source, phase: Phase = "ask") ->
 
 
 def error_record(
-    run: RunContext, error: Exception, seconds: float, trace_id: str | None
+    run: RunContext,
+    error: Exception,
+    seconds: float,
+    trace_id: str | None,
+    usage: UsageCapture | None = None,
 ) -> RunRecord:
+    requests, tokens_in, tokens_out, tool_calls = usage.totals() if usage else (0, 0, 0, 0)
+    model = next(iter(usage.models)) if usage and len(usage.models) == 1 else None
     return RunRecord(
         at=run.at,
         source=run.source,
@@ -151,6 +171,15 @@ def error_record(
         seconds=seconds,
         error=explain_model_failure(error),
         trace_id=trace_id,
+        model=model,
+        requests=requests,
+        input_tokens=tokens_in,
+        output_tokens=tokens_out,
+        tool_calls=tool_calls,
+        cost_usd=cost_usd(model, tokens_in, tokens_out)
+        if model and tokens_in + tokens_out
+        else None,
+        usage_status="partial" if requests or tokens_in or tokens_out else "unknown",
     )
 
 
@@ -173,6 +202,7 @@ def outcome_record(
         tool_calls=usage.tool_calls,
         seconds=seconds,
         trace_id=trace_id,
+        usage_status="complete",
     )
     if isinstance(outcome, PendingApproval):
         return record

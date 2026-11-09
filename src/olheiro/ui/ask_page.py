@@ -12,6 +12,7 @@ from pydantic_ai.exceptions import AgentRunError, FallbackExceptionGroup
 
 from olheiro.agent import AgentDeps, AgentReport, ApprovalContextError, PendingApproval, resume
 from olheiro.cache import ask_with_cache, normalize_question
+from olheiro.config import has_settings_scope
 from olheiro.db import WORKSPACE_CATALOG
 from olheiro.demo import BudgetUnavailableError
 from olheiro.errors import explain_model_failure
@@ -53,7 +54,9 @@ def ask_page() -> None:
     page_intro(
         "Seu próximo insight começa aqui",
         "Perguntar aos dados",
-        "Converse com a AnalisIA. Descubra respostas em português e confira os dados da análise.",
+        "Explore as análises prontas e confira os dados, o SQL e as visualizações."
+        if has_settings_scope()
+        else "Converse com a AnalisIA. Descubra respostas em português e confira os dados.",
     )
     tables = columns_by_table(deps.con, "schema_name", "raw")
     context_strip(resources.settings.dataset_title, len(tables), sum(map(len, tables.values())))
@@ -80,7 +83,12 @@ def ask_page() -> None:
     if pending is not None:
         show_approval(pending, resources, deps)
 
-    typed = st.chat_input("Pergunte sobre a base selecionada", disabled=pending is not None)
+    typed = st.chat_input(
+        "Escolha uma análise pronta acima"
+        if has_settings_scope()
+        else "Pergunte sobre a base selecionada",
+        disabled=pending is not None or has_settings_scope(),
+    )
     question = typed or st.session_state.pop("queued_question", None)
     if question:
         with st.chat_message("user"):
@@ -88,10 +96,15 @@ def ask_page() -> None:
         with st.chat_message("assistant"), st.spinner("Analisando os dados…"):
             handle_question(question, resources, deps)
         st.rerun()
-    st.caption(
-        f"Continue a análise com outra pergunta. Contexto: {conversation.turn_count} de até "
-        f"{conversation.max_turns} análises recentes. Nova exploração limpa esse contexto."
-    )
+    if has_settings_scope():
+        st.caption(
+            "Explore outra análise pronta. Para novas perguntas com IA, execute o projeto local."
+        )
+    else:
+        st.caption(
+            f"Continue a análise com outra pergunta. Contexto: {conversation.turn_count} de até "
+            f"{conversation.max_turns} análises recentes. Nova exploração limpa esse contexto."
+        )
     if conversation.truncated:
         st.caption(
             "O contexto foi limitado por tamanho ou quantidade de análises. "
@@ -215,7 +228,9 @@ def show_draft(pending: bool) -> None:
 
 def show_examples(resources: AppResources) -> None:
     """Perguntas já respondidas: viram atalhos que não gastam cota."""
-    examples = resources.cache.questions()[:MAX_EXAMPLES]
+    examples = resources.cache.questions()
+    if not has_settings_scope():
+        examples = examples[:MAX_EXAMPLES]
     if examples:
         st.pills(
             "Perguntas prontas (respondidas do cache, sem gastar cota)",

@@ -9,6 +9,18 @@ responder. Dataset de demonstração: Campeonato Brasileiro 2003–2024 (`data/r
 em fases com mentoria. **Primeiro projeto de agentes do autor: explicar conceitos antes de codar.**
 
 ## Visão do produto (definida em 2026-10-22)
+**Decisão atual de 09/11/2026:** hospedagem gratuita para portfólio. Preparada entrada
+`portfolio_app.py` para Community Cloud, com dados sintéticos, dez análises prontas e modelo
+desabilitado. Guia: `docs/publicacao-gratuita.md`; entrega: `docs/entrega-portfolio-gratuito.md`.
+Implementados recursos no wheel/sdist e smoke de instalação externa, ferramentas de catálogo
+condicionais, consumo parcial em erros, deltas na retomada, validação de gráficos e CLI de
+backup. Benchmark de conversa com cinco cenários/12 turnos, validado offline; não houve
+nova geração paga nem medição real da acurácia das novas instruções. Atualização da CI
+aguarda push autorizado. Publicação na conta do autor e piloto no destino continuam pendentes.
+Validação final desta entrega: **345 testes**, também em cópia sem `.env`/chaves; Ruff,
+mypy (44 módulos), build offline e instalação externa do wheel aprovados. 24 recursos públicos
+sincronizados. AppTest cobriu as dez análises e dashboards privados. Navegador indisponível;
+revisão visual no celular fica no piloto. Sem push/deploy ou chamadas pagas adicionais.
 Destino: integrar ao portfólio do autor como ferramenta de consultas, buscas, gráficos e
 dashboards. **Onde hospedar ainda não foi decidido** (opções: app Streamlit publicado + link,
 API + frontend no site do portfólio, ou só local + vídeo). Por isso: núcleo independente de

@@ -24,9 +24,11 @@ olheiro-load = "olheiro.db:main"
 olheiro-check = "olheiro.check_setup:main"
 olheiro-ask = "olheiro.cli:main"
 olheiro-eval = "olheiro.evaluation:main"
+olheiro-eval-chat = "olheiro.conversation_evaluation:main"
 olheiro-mcp = "olheiro.mcp_server:main"
 olheiro-app = "olheiro.launcher:main"
 olheiro-dataset = "olheiro.datasets:main"
+olheiro-backup = "olheiro.backup:main"
 
 [dependency-groups]
 dev = [

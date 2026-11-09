@@ -273,3 +273,28 @@ def test_agent_discovers_and_analyzes_a_table_omitted_from_the_initial_context()
         assert isinstance(result, AgentReport) and result.evidence.rows == [(125,)]
         assert "raw.z_vendas" in str(parts_of(script.received[1], ToolReturnPart)[0].content)
         assert "valor INTEGER" in str(parts_of(script.received[2], ToolReturnPart)[-1].content)
+
+
+def test_small_complete_catalog_does_not_expose_redundant_discovery_tools(
+    con: duckdb.DuckDBPyConnection,
+) -> None:
+    seen: list[set[str]] = []
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.append({tool.name for tool in info.function_tools})
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {
+                        "answerable": True,
+                        "answer": "Flamengo.",
+                        "sql": CHAMPIONS_SQL,
+                    },
+                )
+            ]
+        )
+
+    ask("Quem foi campeão?", AgentDeps(con), FunctionModel(respond))
+    assert {"run_sql", "profile_column", "save_result"} <= seen[0]
+    assert not {"discover_tables", "describe_table", "read_semantics"} & seen[0]

@@ -1,0 +1,5 @@
+order_id,customer_id,ordered_at,amount,status
+1001,1,2026-09-01,120.50,concluido
+1002,2,2026-09-02,89.90,concluido
+1003,1,2026-09-03,250.00,concluido
+1004,3,2026-09-04,50.00,cancelado

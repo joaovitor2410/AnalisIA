@@ -1,0 +1,12 @@
+{
+  "files": {
+    "customers.csv": {"types": {"customer_id": "VARCHAR"}},
+    "orders.csv": {
+      "types": {
+        "order_id": "VARCHAR",
+        "customer_id": "VARCHAR",
+        "amount": "DECIMAL(18,2)"
+      }
+    }
+  }
+}

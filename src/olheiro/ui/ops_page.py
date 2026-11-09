@@ -97,6 +97,10 @@ def show_kpis(frame: pd.DataFrame) -> None:
             "Requisições/pergunta", f"{from_model['requests'].mean():.1f}", border=True
         )
     st.caption(f"Custo equivalente no nível pago: US$ {cost:.4f}")
+    if (frame["usage_status"] != "complete").any():
+        st.caption(
+            "Há registros com consumo parcial ou desconhecido; o total é um mínimo conhecido."
+        )
 
 
 def show_charts(frame: pd.DataFrame) -> None:
@@ -137,6 +141,7 @@ def show_recent(frame: pd.DataFrame) -> None:
         "seconds": "segundos",
         "cost_usd": "custo US$",
         "error": "erro",
+        "usage_status": "cobertura do consumo",
     }
     st.dataframe(recent[list(columns)].rename(columns=columns), hide_index=True)
 

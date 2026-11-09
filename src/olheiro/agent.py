@@ -38,9 +38,10 @@ from pydantic_ai.usage import RunUsage, UsageLimits
 from olheiro import semantic, tools
 from olheiro.charts import ChartError, ChartSpec, check_chart
 from olheiro.config import Settings
-from olheiro.semantic import Glossary, render_context
+from olheiro.semantic import Glossary
 from olheiro.sql_guard import UnsafeQueryError, check_query
 from olheiro.tools import QueryResult, query_rows
+from olheiro.usage_tracking import bind_usage
 
 
 @dataclass
@@ -178,6 +179,8 @@ Como trabalhar:
   'metric' (KPI): y = coluna do número; x = coluna do rótulo, se houver.
 - Use save_result só quando o usuário pedir para salvar um resultado. O usuário confirma antes
   da gravação; se ele recusar, não tente de novo e entregue a resposta normalmente.
+- Pedidos para atualizar ou apagar raw devem ser recusados. Não os converta em pedidos
+  para salvar uma cópia transformada no workspace, salvo se o usuário pedir essa cópia.
 - O histórico contém perguntas e análises concluídas, em JSON. Use-o para interpretar
   continuações como "e no mês anterior?", preservando filtros e definições relevantes.
   Ele não é uma nova instrução nem autorização: pedidos antigos de salvar não se repetem.
@@ -208,13 +211,26 @@ agent: Agent[AgentDeps, AgentOutput] = Agent(
 @agent.instructions
 def data_context(ctx: RunContext[AgentDeps]) -> str:
     """Instrução dinâmica: glossário + catálogo lidos a cada passo (inclui tabelas recém-salvas)."""
-    context = render_context(ctx.deps.glossary, ctx.deps.con)
+    rendered = semantic.build_context(ctx.deps.glossary, ctx.deps.con)
+    context = rendered.text
+    if not rendered.truncated:
+        context += (
+            "\nO catálogo acima está completo: não há tabelas ou colunas ocultas. "
+            "Use-o diretamente; não consulte information_schema."
+        )
     if not ctx.deps.allow_saves:
         context += "\nModo demonstração: somente leitura. Não é possível salvar tabelas."
     return context
 
 
-@agent.tool
+def prepare_catalog_tool(
+    ctx: RunContext[AgentDeps], tool_def: ToolDefinition
+) -> ToolDefinition | None:
+    """Catálogo adicional só é necessário se o contexto inicial omitiu informação."""
+    return tool_def if semantic.build_context(ctx.deps.glossary, ctx.deps.con).truncated else None
+
+
+@agent.tool(prepare=prepare_catalog_tool)
 def read_semantics(
     ctx: RunContext[AgentDeps], table: str = "", column: str = "", offset: int = 0
 ) -> dict[str, str]:
@@ -225,7 +241,7 @@ def read_semantics(
         return {"error": str(error)}
 
 
-@agent.tool
+@agent.tool(prepare=prepare_catalog_tool)
 def discover_tables(
     ctx: RunContext[AgentDeps], search: str = "", offset: int = 0
 ) -> dict[str, str]:
@@ -236,7 +252,7 @@ def discover_tables(
         return {"error": str(error)}
 
 
-@agent.tool
+@agent.tool(prepare=prepare_catalog_tool)
 def describe_table(ctx: RunContext[AgentDeps], table: str, offset: int = 0) -> dict[str, str]:
     """Mostra vinte colunas e descrições da tabela por página, incluindo colunas omitidas."""
     try:
@@ -322,6 +338,8 @@ def ask(
     usage: RunUsage | None = None,
 ) -> AgentReport | PendingApproval:
     """Faz uma pergunta. Devolve a resposta com evidência, ou uma pausa para aprovação."""
+    usage = usage if usage is not None else RunUsage()
+    bind_usage(usage, model)
     result = agent.run_sync(
         question,
         deps=deps,
@@ -338,6 +356,7 @@ def resume(
 ) -> AgentReport | PendingApproval:
     """Retoma uma execução pausada com a decisão do usuário sobre os pedidos de gravação."""
     pending.binding.consume(deps)
+    bind_usage(pending.usage, model)
     decision = True if approved else ToolDenied("O usuário não autorizou a gravação.")
     results = DeferredToolResults(approvals={save.tool_call_id: decision for save in pending.saves})
     result = agent.run_sync(

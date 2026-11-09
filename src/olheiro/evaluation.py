@@ -33,7 +33,7 @@ from pydantic_evals.evaluators import EvaluationReason, Evaluator, EvaluatorCont
 from pydantic_evals.reporting import EvaluationReport
 
 from olheiro.agent import AgentDeps, PendingApproval, ask, google_model, resume
-from olheiro.config import PROJECT_ROOT, Settings
+from olheiro.config import PROJECT_ROOT, Settings, resource_path
 from olheiro.db import RAW_SCHEMA, quote_identifier, scalar, session_cursor
 from olheiro.errors import explain_model_failure
 from olheiro.eval_suites import SUITES, suite_database
@@ -44,7 +44,7 @@ from olheiro.telemetry import RunLog, tracked
 from olheiro.tools import QueryResult, query_rows
 from olheiro.tracing import setup_tracing
 
-CASES_PATH = PROJECT_ROOT / "evals" / "cases.yaml"
+CASES_PATH = resource_path("evals/cases.yaml")
 RESULTS_DIR = PROJECT_ROOT / "evals" / "results"
 
 # Média medida nos testes reais das fases 2–4, usada só para a estimativa antes de rodar.

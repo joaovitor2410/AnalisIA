@@ -12,11 +12,13 @@ from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExportResult
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic_ai import models
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.usage import RequestUsage
 from streamlit.testing.v1 import AppTest
 
-from olheiro.agent import AgentDeps, ask
+from olheiro.agent import AgentDeps, PendingApproval, ask, resume
 from olheiro.db import connect, connect_agent
 from olheiro.pricing import cost_usd
 from olheiro.storage import JsonLines
@@ -95,6 +97,59 @@ def test_errors_are_recorded_and_reraised(tmp_path: Path) -> None:
         raise RuntimeError("falhou")
     (record,) = runs.read()
     assert record.outcome == "error" and record.error == "RuntimeError: falhou"
+    assert record.usage_status == "unknown"
+
+
+@pytest.mark.parametrize("source", ["app", "cli", "mcp"])
+def test_error_preserves_received_usage_without_call_site_changes(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path, source: Source
+) -> None:
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if any(isinstance(message, ModelResponse) for message in messages):
+            raise UnexpectedModelBehavior("falha após a primeira resposta")
+        return ModelResponse(
+            parts=[ToolCallPart("run_sql", {"query": SQL})],
+            usage=RequestUsage(input_tokens=1000, output_tokens=20),
+        )
+
+    log = RunLog(tmp_path / "partial.jsonl")
+    with pytest.raises(UnexpectedModelBehavior), tracked(log, QUESTION, source):
+        ask(QUESTION, AgentDeps(con), FunctionModel(respond, model_name="gemini-3.8-flash"))
+    record = log.read()[0]
+    assert record.usage_status == "partial" and record.requests >= 1
+    assert record.input_tokens == 1000 and record.output_tokens == 20
+    assert record.cost_usd == pytest.approx(cost_usd("gemini-3.8-flash", 1000, 20))
+
+
+def test_approval_resume_does_not_double_count_prior_usage(
+    con: duckdb.DuckDBPyConnection, tmp_path: Path
+) -> None:
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        if not any(isinstance(message, ModelResponse) for message in messages):
+            return ModelResponse(
+                parts=[ToolCallPart("save_result", {"name": "teste", "query": SQL})]
+            )
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {
+                        "answerable": True,
+                        "answer": "Flamengo.",
+                        "sql": SQL,
+                    },
+                )
+            ]
+        )
+
+    deps, log = AgentDeps(con), RunLog(tmp_path / "resume.jsonl")
+    model = FunctionModel(respond)
+    with tracked(log, QUESTION, "cli") as run:
+        pending = run.finish(ask(QUESTION, deps, model))
+    assert isinstance(pending, PendingApproval)
+    with tracked(log, QUESTION, "cli", phase="resume") as run:
+        run.finish(resume(pending, False, deps, model))
+    assert [record.requests for record in log.read()] == [1, 1]
 
 
 def test_nothing_is_recorded_when_there_is_no_outcome(tmp_path: Path) -> None:

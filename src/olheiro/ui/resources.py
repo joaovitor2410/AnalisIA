@@ -17,7 +17,7 @@ from pydantic_ai.usage import UsageLimits
 
 from olheiro.agent import AgentDeps, build_model
 from olheiro.cache import AnswerCache, CacheFile
-from olheiro.config import PROJECT_ROOT, Settings, get_settings
+from olheiro.config import PROJECT_ROOT, Settings, get_settings, has_settings_scope
 from olheiro.conversation import Conversation
 from olheiro.dashboard import DashboardStore
 from olheiro.datasets import cache_revision, database_revision, dataset_identity
@@ -56,7 +56,7 @@ def dataset_cache(path: Path, revision: str) -> AnswerCache:
 
 
 @st.cache_resource(show_spinner=False)
-def shared_resources(dataset_path: str | None = None) -> AppResources:
+def shared_resources(dataset_path: str | None = None, profile_key: str = "") -> AppResources:
     pydantic_ai.BANNER_ENABLED = False
     settings = get_settings()
     if dataset_path is not None:
@@ -119,7 +119,13 @@ def shared_resources(dataset_path: str | None = None) -> AppResources:
 
 def load_resources() -> AppResources:
     """Dados públicos compartilhados; cache e painel privados para cada sessão da demo."""
-    shared = shared_resources(st.session_state.get("selected_dataset"))
+    selection = st.session_state.get("selected_dataset")
+    # Perfil público tem recursos próprios mesmo em testes que abrem os dois apps no processo.
+    shared = (
+        shared_resources(selection, profile_key="portfolio")
+        if has_settings_scope()
+        else shared_resources(selection)
+    )
     if not shared.settings.olheiro_demo_mode and shared.settings.olheiro_dataset is not None:
         settings = shared.settings.for_dataset(shared.settings.olheiro_dataset)
         revision = cache_revision(settings, shared.data_revision)

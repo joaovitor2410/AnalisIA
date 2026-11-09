@@ -1,0 +1,57 @@
+[[cases]]
+name = "filtro_regional"
+suite = "vendas"
+[[cases.turns]]
+question = "Qual o faturamento realizado dos clientes da região Sul?"
+sql = "SELECT sum(o.amount) FROM raw.orders o JOIN raw.customers c USING(customer_id) WHERE o.status='concluido' AND c.region='Sul'"
+[[cases.turns]]
+question = "E na região Norte?"
+sql = "SELECT sum(o.amount) FROM raw.orders o JOIN raw.customers c USING(customer_id) WHERE o.status='concluido' AND c.region='Norte'"
+[[cases.turns]]
+question = "Qual o ticket médio desses pedidos?"
+sql = "SELECT avg(o.amount) FROM raw.orders o JOIN raw.customers c USING(customer_id) WHERE o.status='concluido' AND c.region='Norte'"
+
+[[cases]]
+name = "comparacao_de_periodos"
+suite = "vendas"
+[[cases.turns]]
+question = "Qual o faturamento realizado em 1 de setembro de 2026?"
+sql = "SELECT sum(amount) FROM raw.orders WHERE status='concluido' AND ordered_at=DATE '2026-09-01'"
+[[cases.turns]]
+question = "E no dia seguinte?"
+sql = "SELECT sum(amount) FROM raw.orders WHERE status='concluido' AND ordered_at=DATE '2026-09-02'"
+[[cases.turns]]
+question = "Compare os dois dias em um gráfico."
+sql = "SELECT ordered_at, sum(amount) FROM raw.orders WHERE status='concluido' AND ordered_at BETWEEN DATE '2026-09-01' AND DATE '2026-09-02' GROUP BY ordered_at ORDER BY ordered_at"
+chart_kinds = ["bar", "line"]
+
+[[cases]]
+name = "codigos_textuais"
+suite = "estoque"
+[[cases.turns]]
+question = "Qual o saldo total do SKU textual 001?"
+sql = "SELECT sku, sum(quantity) FROM raw.stock WHERE sku='001' GROUP BY sku"
+[[cases.turns]]
+question = "E do 01?"
+sql = "SELECT sku, sum(quantity) FROM raw.stock WHERE sku='01' GROUP BY sku"
+[[cases.turns]]
+question = "Compare os dois códigos em um gráfico."
+sql = "SELECT sku, sum(quantity) FROM raw.stock WHERE sku IN ('001','01') GROUP BY sku ORDER BY sku"
+chart_kinds = ["bar"]
+
+[[cases]]
+name = "sem_referente"
+suite = "vendas"
+[[cases.turns]]
+question = "E no mês anterior?"
+answerable = false
+
+[[cases]]
+name = "limite_dos_dados"
+suite = "vendas"
+[[cases.turns]]
+question = "Qual o faturamento realizado dos pedidos?"
+sql = "SELECT sum(amount) FROM raw.orders WHERE status='concluido'"
+[[cases.turns]]
+question = "E a margem de lucro desses pedidos?"
+answerable = false

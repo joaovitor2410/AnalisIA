@@ -1,42 +1,52 @@
 # Pendências para concluir a AnalisIA
 
-Revisão de 09/11/2026. Escopo de conclusão: agente de análise tabular para uso pessoal e
-demo pública com base fixa. Os itens abaixo distinguem a entrega desse escopo de evoluções
-que só se tornam necessárias ao ampliar o público ou a arquitetura.
+Atualização após a entrega gratuita de 09/11/2026. Escopo: agente local completo e demo
+de portfólio no Streamlit Community Cloud, com dados sintéticos e sem chamadas a modelos.
+Guia: [publicacao-gratuita.md](publicacao-gratuita.md). Entrega: [relatório](entrega-portfolio-gratuito.md).
+
+## Resolvido localmente
+
+- Dados sintéticos com procedência própria, dez análises curadas e perfil gratuito separado.
+- Entrada `portfolio_app.py`, sem chaves/configurações pessoais e com estado descartável por sessão.
+- Recursos empacotados e instalação do wheel fora do checkout verificada; CI ampliada.
+- Ferramentas de catálogo condicionais, registro de consumo parcial em erros e retomada sem duplicação.
+- Proteções para KPI com várias linhas e eixos ambíguos.
+- Benchmark de conversas com 12 turnos, validado offline e pronto para medição real opcional.
+- CLI de backup/verificação/restauração, com testes de integridade e recuperação.
+- Resultados da F5 preservados e guia de publicação/roteiro de demonstração documentados.
 
 ## Entrega da versão de portfólio
 
 | Prioridade | Pendência | Entrega verificável |
 |---|---|---|
 | P0 | Corrigir divergências reveladas pela F5 | A medição dos 118 casos foi concluída: Flash 41/44 e Lite 39/44 em equivalência da evidência, com três/oito falhas por limite e uma proposta indevida de gravação no Lite. Priorizar esses casos, sem apagar a rodada original |
-| P0 | Resolver os dados da demo pública | Condições de redistribuição confirmadas ou base sintética escolhida, com perguntas, respostas SQL e gráficos curados |
-| P0 | Escolher e configurar a hospedagem | Configuração específica do destino, HTTPS, segredos, volume persistente e perfil de demo com leitura; opções em `hospedagem.md` |
-| P0 | Validar os contêineres da entrega | Build, health, smoke de isolamento, UI pessoal/demo e escrita com UID 10001 aprovados em Linux; Docker indisponível neste Mac |
-| P0, com Gemini público | Configurar consumo no provedor | Limites/quota e acompanhamento no projeto da API; a quota local conta tentativas e não garante um teto financeiro |
-| P1 | Testar operação no destino | Reinício preserva quota/estado; carga com visitantes simultâneos mede memória, latência e interrupção de consultas |
-| P1 | Automatizar backup e comprovar restauração | Cópia privada de `/state`, retenção definida e restauração executada com a aplicação parada |
-| P1 | Preparar a entrega demonstrável | README coerente com a versão atual, roteiro/vídeo, exemplos de resposta correta, recusa e continuidade; versão/release identificada |
+| P0, autor | Publicar a demo gratuita | Liberar push, conectar GitHub ao Community Cloud, selecionar `portfolio_app.py` e Python 3.13; seguir `publicacao-gratuita.md` |
+| P0, após push | Conferir CI | Qualidade/pacote e contêiner pessoal/demo precisam executar no runner; Docker indisponível neste Mac. A demo Community Cloud usa a entrada própria e não o Compose |
+| P1, no destino | Testar o endereço publicado | Dois visitantes, reinício, memória e navegação; estado da demo é descartável por escolha, sem quota de modelo ou dados particulares |
+| P1, autor | Escolher a apresentação no portfólio | Link da demo guiada; opcionalmente vídeo curto mostrando IA local e continuação de uma pergunta |
 
 ## Qualidade do agente e do código
 
 | Prioridade | Pendência | Motivo e critério de conclusão |
 |---|---|---|
-| P1 | Avaliar conversas com modelos reais | A F5 atual avalia perguntas independentes; incluir manutenção de filtros, troca de período, ambiguidades e referências fora da janela |
+| P1, opcional com API | Medir novamente perguntas/conversas reais | A nova suíte já cobre filtros, períodos, códigos e ambiguidades offline; usar cota gratuita em pequenas rodadas ou autorizar custos. Os resultados reais antigos não medem a versão nova |
 | P1 | Reduzir afirmações fora da evidência final | Executar SQL e validar colunas do gráfico não comprova toda frase; revisar números, identificadores, posições e justificativas citadas |
-| P1 | Reduzir exploração redundante e melhorar recusas | A F5 encontrou consultas ao catálogo já disponível e tentativa de usar `information_schema`, recusada pelo guard; escolher ferramentas conforme o tamanho do catálogo e medir recusas dentro do limite de seis requisições |
-| P1 | Completar consumo de falhas na Operação | A F5 passou a guardar consumo recebido antes de falhar; `telemetry.error_record` do app/CLI/MCP ainda usa os padrões de consumo zero. Propagar o uso conhecido também nesses fluxos e distinguir consumo desconhecido |
-| P1 | Avaliar a escolha dos gráficos | O validador verifica colunas e tipos, mas não mede se tipo, título, eixo e ordenação comunicam corretamente a pergunta; incluir esse critério no benchmark |
+| P1 | Medir o efeito das correções de ferramentas/recusa | Descoberta redundante já foi removida de catálogos completos e a instrução foi reforçada; falta comprovar o ganho com modelo real |
+| P1 | Expandir a avaliação semântica dos gráficos | Há critérios de tipo nos cenários de conversa e proteções estruturais; título, unidade, ordenação e adequação visual ainda exigem avaliação mais ampla |
 | P1 | Expandir casos de domínio e volume | Vendas/estoque têm dez perguntas cada; acrescentar dados maiores, datas, nulos, granularidade, chaves compostas e JOINs que multiplicam medidas; variar fixtures para detectar respostas/SQL com valores fixados indevidamente |
-| P1, para distribuição por pacote | Tornar wheel/sdist autossuficientes | O build atual passa, mas não inclui `demo/`, `semantic/`, `data/raw/` nem `evals/`; decidir recursos empacotados/configuração externa e testar instalação limpa fora do checkout |
-| P1 | Reproduzir e preservar avaliações | Fixar revisão de casos/dados/regras, limites, modelo e versão do código; manter rodadas iniciais e reavaliações separadas, sem confundir testes filtrados com cobertura completa |
 | P2 | Medir o ciclo de vida das conexões | Recursos de bases ficam em `st.cache_resource`; medir crescimento ao alternar muitas bases e definir descarte quando necessário |
 | P2 | Completar o ciclo de vida de bases e semântica | A importação existe; faltam fluxos de exclusão segura, limpeza de versões antigas e política de retenção dos arquivos |
 | P2 | Rever estimativas de preço periodicamente | A tabela local de tokens não é a fatura; preços têm data de referência e mudanças previstas precisam ser conferidas |
-| P2 | Medir acessibilidade e uso em telas pequenas | Complementar AppTest com revisão visual, navegação por teclado, legibilidade e exportações no navegador |
+| P2, autor no piloto | Medir acessibilidade e uso em telas pequenas | AppTest passou; conferir celular, teclado e exportações. A ferramenta de navegador estava indisponível nesta sessão |
 
 ## Evoluções condicionadas ao produto
 
 Estes itens não impedem concluir a demo pública com dados fixos e uma única instância.
+
+Backups pessoais estão implementados, mas agendamento/local de guarda e remoção de versões antigas
+dependem de como o autor utiliza os dados. A demo gratuita não mantém dados pessoais persistentes.
+Publicar uma imagem/pacote contendo o futebol ainda exige conferir as condições da fonte;
+a nova demonstração usa somente os dados sintéticos.
 
 | Quando ampliar o escopo | O que implementar |
 |---|---|

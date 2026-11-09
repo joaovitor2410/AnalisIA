@@ -1,5 +1,10 @@
 # Opções para a demo pública — F8C.2
 
+**Decisão atualizada em 09/11/2026:** o autor escolheu hospedagem sem custo para portfólio.
+A entrada preparada é `portfolio_app.py`, para Streamlit Community Cloud, com dados sintéticos
+e modelo desabilitado. Siga [publicacao-gratuita.md](publicacao-gratuita.md). A comparação
+abaixo é histórica; não é mais a proposta de contratação desta entrega.
+
 Comparação preparada em **06/11/2026**, após o autor escolher manter a demo pública e
 receber opções de hospedagem antes de contratar. Nenhum provedor foi escolhido, nenhuma
 conta/recurso foi criado e nenhum deploy foi executado nesta fase.

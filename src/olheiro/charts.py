@@ -46,15 +46,20 @@ def check_chart(spec: ChartSpec, evidence: QueryResult) -> None:
             f"O gráfico usa colunas fora do resultado do SQL: {missing}. "
             f"Colunas disponíveis: {evidence.columns}."
         )
+    if any(evidence.columns.count(name) > 1 for name in (spec.x, spec.y) if name):
+        raise ChartError("O eixo usa um nome de coluna repetido; defina aliases únicos no SQL.")
     y_values = evidence.column_values(spec.y)
     if not all(value is None or isinstance(value, Number) for value in y_values):
         raise ChartError(f"A coluna '{spec.y}' precisa ser numérica.")
     if spec.kind == "metric" and not evidence.rows:
         raise ChartError("Um KPI (metric) precisa de pelo menos uma linha no resultado.")
+    if spec.kind == "metric" and len(evidence.rows) != 1:
+        raise ChartError("Um KPI (metric) exige uma única linha; use barras para vários valores.")
 
 
 def build_figure(spec: ChartSpec, evidence: QueryResult) -> go.Figure:
     """Monta a figura a partir do resultado real da consulta."""
+    check_chart(spec, evidence)
     if spec.kind == "metric":
         return metric_figure(spec, evidence)
     if spec.x is None:  # check_chart já recusa; aqui protege quem chamar sem validar

@@ -1,0 +1,25 @@
+rules = [
+  "Dados sintéticos de estoque, sem informações de pessoas reais.",
+  "sku é um identificador textual: 001, 01 e 1 são produtos diferentes.",
+  "stock contém o saldo atual por produto e local, em unidades; some locais para obter o saldo por produto.",
+  "quantity nula significa saldo desconhecido, nunca zero. Não classifique esse produto como abaixo do mínimo.",
+  "Valor conhecido do estoque = quantity * unit_cost, só para SKUs cadastrados e quantidades conhecidas; explicite as exclusões.",
+  "Reposição: soma das quantidades conhecidas menor que min_stock; produtos com qualquer saldo desconhecido ficam sem classificação.",
+  "Há SKU sem cadastro e fornecedor sem cadastro. Não invente nomes nem descarte essas linhas em contagens do estoque.",
+  "suppliers contém linhas idênticas duplicadas; use SELECT DISTINCT supplier_id, supplier_name antes de cruzar com medidas.",
+  "Não existem vendas, histórico de movimentos, receita, demanda ou prazos de entrega nesta base.",
+]
+
+[tables.products]
+description = "Um produto por SKU; custo unitário em BRL e mínimo em unidades."
+[tables.products.columns]
+sku = "Código textual, com zeros significativos."
+unit_cost = {description = "Custo de uma unidade do produto.", unit = "BRL"}
+
+[tables.stock]
+description = "Um saldo atual por SKU e local; não é histórico de movimentações."
+[tables.stock.columns]
+quantity = {description = "Saldo conhecido; nulo significa desconhecido.", unit = "unidades"}
+
+[tables.suppliers]
+description = "Cadastro de fornecedores com uma duplicação idêntica deliberada."

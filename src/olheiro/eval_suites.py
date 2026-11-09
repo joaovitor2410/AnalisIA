@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 
 import duckdb
 
-from olheiro.config import PROJECT_ROOT
+from olheiro.config import PROJECT_ROOT, RESOURCE_ROOT, resource_path
 from olheiro.db import connect, connect_agent, find_data_files, load_raw_dir
 from olheiro.import_options import load_import_options
 from olheiro.semantic import Glossary, check_glossary, load_glossary
@@ -30,7 +30,8 @@ class EvalSuite:
         if self.options is not None:
             paths.append(self.options)
         for path in paths:
-            digest.update(str(path.relative_to(PROJECT_ROOT)).encode())
+            base = RESOURCE_ROOT if path.is_relative_to(RESOURCE_ROOT) else PROJECT_ROOT
+            digest.update(str(path.relative_to(base)).encode())
             digest.update(b"\x00")
             digest.update(path.read_bytes())
         return digest.hexdigest()
@@ -39,23 +40,23 @@ class EvalSuite:
 SUITES = {
     "brasileirao": EvalSuite(
         "brasileirao",
-        PROJECT_ROOT / "evals/cases.yaml",
-        PROJECT_ROOT / "data/raw",
-        PROJECT_ROOT / "semantic/glossary.toml",
+        resource_path("evals/cases.yaml"),
+        resource_path("data/raw"),
+        resource_path("semantic/glossary.toml"),
     ),
     "vendas": EvalSuite(
         "vendas",
-        PROJECT_ROOT / "evals/vendas.yaml",
-        PROJECT_ROOT / "examples/datasets/retail",
-        PROJECT_ROOT / "examples/datasets/retail/glossary.toml",
-        PROJECT_ROOT / "examples/datasets/retail/import-options.json",
+        resource_path("evals/vendas.yaml"),
+        resource_path("examples/datasets/retail"),
+        resource_path("examples/datasets/retail/glossary.toml"),
+        resource_path("examples/datasets/retail/import-options.json"),
     ),
     "estoque": EvalSuite(
         "estoque",
-        PROJECT_ROOT / "evals/estoque.yaml",
-        PROJECT_ROOT / "evals/fixtures/inventory",
-        PROJECT_ROOT / "evals/fixtures/inventory/glossary.toml",
-        PROJECT_ROOT / "evals/fixtures/inventory/import-options.json",
+        resource_path("evals/estoque.yaml"),
+        resource_path("evals/fixtures/inventory"),
+        resource_path("evals/fixtures/inventory/glossary.toml"),
+        resource_path("evals/fixtures/inventory/import-options.json"),
     ),
 }
 

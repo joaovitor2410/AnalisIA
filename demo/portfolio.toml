@@ -1,0 +1,100 @@
+[[examples]]
+question = "Qual o faturamento realizado no período?"
+[examples.output]
+answerable = true
+answer = "O indicador soma os pedidos concluídos de abril a setembro de 2026. Pedidos cancelados ficam fora da receita."
+sql = "SELECT sum(amount) AS faturamento_brl FROM raw.orders WHERE status = 'concluido'"
+[examples.output.chart]
+kind = "metric"
+y = "faturamento_brl"
+title = "Faturamento realizado (R$)"
+
+[[examples]]
+question = "Qual região tem o maior faturamento realizado?"
+[examples.output]
+answerable = true
+answer = "A tabela mostra a região líder e inclui todas as empatadas, caso existam."
+sql = "SELECT c.region AS regiao, sum(o.amount) AS faturamento_brl FROM raw.orders o JOIN raw.customers c USING(customer_id) WHERE o.status = 'concluido' GROUP BY c.region QUALIFY rank() OVER (ORDER BY faturamento_brl DESC) = 1"
+[examples.output.chart]
+kind = "bar"
+x = "regiao"
+y = "faturamento_brl"
+title = "Região com maior faturamento (R$)"
+
+[[examples]]
+question = "Como o faturamento se distribui por região?"
+[examples.output]
+answerable = true
+answer = "A comparação considera somente os pedidos concluídos de cada região."
+sql = "SELECT c.region AS regiao, sum(o.amount) AS faturamento_brl FROM raw.orders o JOIN raw.customers c USING(customer_id) WHERE o.status = 'concluido' GROUP BY c.region ORDER BY faturamento_brl DESC, regiao"
+[examples.output.chart]
+kind = "bar"
+x = "regiao"
+y = "faturamento_brl"
+title = "Faturamento por região (R$)"
+
+[[examples]]
+question = "Como o faturamento evoluiu por mês?"
+[examples.output]
+answerable = true
+answer = "A série agrega os pedidos concluídos por mês, em ordem cronológica."
+sql = "SELECT date_trunc('month', ordered_at)::DATE AS mes, sum(amount) AS faturamento_brl FROM raw.orders WHERE status = 'concluido' GROUP BY mes ORDER BY mes"
+[examples.output.chart]
+kind = "line"
+x = "mes"
+y = "faturamento_brl"
+title = "Evolução mensal do faturamento (R$)"
+
+[[examples]]
+question = "Qual o ticket médio dos pedidos concluídos?"
+[examples.output]
+answerable = true
+answer = "O ticket médio é o valor médio dos pedidos concluídos no período."
+sql = "SELECT round(avg(amount),2) AS ticket_medio_brl FROM raw.orders WHERE status = 'concluido'"
+[examples.output.chart]
+kind = "metric"
+y = "ticket_medio_brl"
+title = "Ticket médio (R$)"
+
+[[examples]]
+question = "Quais são os cinco clientes com maior faturamento?"
+[examples.output]
+answerable = true
+answer = "O ranking usa a receita dos pedidos concluídos. Empates no valor da quinta posição também são incluídos."
+sql = "SELECT c.customer_name AS cliente, sum(o.amount) AS faturamento_brl FROM raw.orders o JOIN raw.customers c USING(customer_id) WHERE status = 'concluido' GROUP BY cliente QUALIFY rank() OVER (ORDER BY faturamento_brl DESC) <= 5 ORDER BY faturamento_brl DESC, cliente"
+[examples.output.chart]
+kind = "bar"
+x = "cliente"
+y = "faturamento_brl"
+title = "Clientes com maior faturamento (R$)"
+
+[[examples]]
+question = "Que percentual dos pedidos foi cancelado?"
+[examples.output]
+answerable = true
+answer = "A evidência mostra a quantidade de cancelamentos, o total de pedidos e o percentual calculado."
+sql = "SELECT count(*) AS total_pedidos, count(*) FILTER(WHERE status='cancelado') AS cancelados, round(100.0 * cancelados / total_pedidos,2) AS percentual_cancelado FROM raw.orders"
+[examples.output.chart]
+kind = "metric"
+y = "percentual_cancelado"
+title = "Pedidos cancelados (%)"
+
+[[examples]]
+question = "Quais clientes cadastrados não têm pedidos concluídos?"
+[examples.output]
+answerable = true
+answer = "A consulta identifica clientes sem receita realizada, preservando seus códigos textuais."
+sql = "SELECT c.customer_id AS codigo, c.customer_name AS cliente, c.region AS regiao FROM raw.customers c WHERE NOT EXISTS(SELECT 1 FROM raw.orders o WHERE o.customer_id=c.customer_id AND o.status='concluido') ORDER BY codigo"
+
+[[examples]]
+question = "Compare o faturamento de agosto e setembro de 2026."
+[examples.output]
+answerable = true
+answer = "A evidência calcula os dois meses e a variação percentual de setembro em relação a agosto."
+sql = "WITH totals AS (SELECT sum(amount) FILTER(WHERE month(ordered_at)=8) AS agosto_brl, sum(amount) FILTER(WHERE month(ordered_at)=9) AS setembro_brl FROM raw.orders WHERE status='concluido' AND year(ordered_at)=2026) SELECT *, round(100.0 * (setembro_brl-agosto_brl)/nullif(agosto_brl,0),2) AS variacao_percentual FROM totals"
+
+[[examples]]
+question = "Qual a margem de lucro dos pedidos?"
+[examples.output]
+answerable = false
+answer = "Os dados contêm valores de venda, mas não custos ou despesas. Não é possível calcular margem de lucro com esta base."

@@ -32,8 +32,8 @@ def test_save_figure_writes_html(tmp_path: Path) -> None:
     assert "Pontos" in path.read_text(encoding="utf-8")
 
 
-def test_metric_shows_first_row_value_with_label() -> None:
-    evidence = QueryResult(columns=["team", "titles"], rows=[("Corinthians", 4), ("Palmeiras", 4)])
+def test_metric_shows_single_value_with_label() -> None:
+    evidence = QueryResult(columns=["team", "titles"], rows=[("Corinthians", 4)])
     spec = ChartSpec(kind="metric", x="team", y="titles", title="Mais títulos")
     indicator = build_figure(spec, evidence).data[0]
     assert indicator.type == "indicator"
@@ -58,3 +58,15 @@ def test_metric_needs_at_least_one_row() -> None:
     spec = ChartSpec(kind="metric", y="points", title="t")
     with pytest.raises(ChartError, match="pelo menos uma linha"):
         check_chart(spec, QueryResult(columns=["points"], rows=[]))
+
+
+def test_metric_cannot_hide_a_tie_or_ignore_additional_rows() -> None:
+    spec = ChartSpec(kind="metric", y="points", title="t")
+    with pytest.raises(ChartError, match="única linha"):
+        build_figure(spec, EVIDENCE)
+
+
+def test_axes_cannot_select_ambiguous_duplicate_column_names() -> None:
+    spec = ChartSpec(kind="bar", x="team", y="total", title="t")
+    with pytest.raises(ChartError, match="repetido"):
+        check_chart(spec, QueryResult(["team", "total", "total"], [("A", 1, 99)]))

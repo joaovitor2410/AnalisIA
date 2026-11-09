@@ -1,0 +1,79 @@
+# Curadoria determinística. Os textos orientam a leitura; os números vêm do SQL reexecutado.
+[[examples]]
+question = "Quantas temporadas estão disponíveis?"
+[examples.output]
+answerable = true
+answer = "A evidência mostra o total de temporadas disponíveis na base."
+sql = "SELECT count(DISTINCT season) AS seasons FROM raw.brasileirao"
+[examples.output.chart]
+kind = "metric"
+y = "seasons"
+title = "Temporadas disponíveis"
+
+[[examples]]
+question = "Quais times têm mais títulos desde 2003, incluindo empates?"
+[examples.output]
+answerable = true
+answer = "Estes são os clubes empatados na liderança de títulos dentro do período disponível."
+sql = """
+WITH titles AS (
+    SELECT team, count(*) AS titles FROM raw.brasileirao WHERE place = 1 GROUP BY team
+)
+SELECT team, titles, rank() OVER (ORDER BY titles DESC) AS ranking
+FROM titles QUALIFY ranking = 1 ORDER BY team
+"""
+[examples.output.chart]
+kind = "bar"
+x = "team"
+y = "titles"
+title = "Clubes com mais títulos no período"
+
+[[examples]]
+question = "Como evoluíram os pontos dos campeões por temporada?"
+[examples.output]
+answerable = true
+answer = "A série mostra os pontos dos campeões. Confira os jogos disputados antes de comparar temporadas."
+sql = "SELECT season, team, points, played FROM raw.brasileirao WHERE place = 1 ORDER BY season"
+[examples.output.chart]
+kind = "line"
+x = "season"
+y = "points"
+title = "Pontuação dos campeões"
+
+[[examples]]
+question = "Quais campeões tiveram os maiores aproveitamentos?"
+[examples.output]
+answerable = true
+answer = "O ranking compara os pontos informados com o máximo possível de cada campanha: pontos / (3 × jogos)."
+sql = """
+SELECT season, team, team || ' (' || season || ')' AS champion, points, played,
+       round(100.0 * points / (3 * played), 2) AS utilization
+FROM raw.brasileirao WHERE place = 1 ORDER BY utilization DESC, season LIMIT 10
+"""
+[examples.output.chart]
+kind = "bar"
+x = "champion"
+y = "utilization"
+title = "Aproveitamento dos campeões (%)"
+
+[[examples]]
+question = "Como os títulos se distribuem por região?"
+[examples.output]
+answerable = true
+answer = "A tabela distribui os títulos pelas regiões do cadastro de clubes."
+sql = """
+SELECT coalesce(t.region, 'Não cadastrado') AS region, count(*) AS titles
+FROM raw.brasileirao b LEFT JOIN raw.teams t ON b.team = t.team
+WHERE b.place = 1 GROUP BY t.region ORDER BY titles DESC, region
+"""
+[examples.output.chart]
+kind = "bar"
+x = "region"
+y = "titles"
+title = "Títulos por região"
+
+[[examples]]
+question = "Quem foi o artilheiro do Brasileirão de 2019?"
+[examples.output]
+answerable = false
+answer = "A base contém classificações finais dos clubes, sem estatísticas individuais de jogadores. Não há dados de artilharia para responder."

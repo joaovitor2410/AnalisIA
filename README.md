@@ -5,6 +5,9 @@ SQL + tabela + visualização**. O Brasileirão Série A 2003–2024 demonstra o
 incluindo recusas quando os dados não permitem responder.
 
 Projeto de portfólio de João Victor, construído em fases para estudar agentes, Dados e BI.
+Para publicar sem custo, há uma entrada de **demonstração guiada com dados sintéticos**:
+`uv run streamlit run portfolio_app.py`. São dez análises prontas com SQL/tabela/gráfico,
+sem chave ou chamadas ao modelo. Veja [como publicar gratuitamente](docs/publicacao-gratuita.md).
 O núcleo pode ser usado pelo navegador, terminal ou protocolo MCP. **Importe suas bases CSV
 e Parquet**, selecione a base ativa e analise outros domínios com o mesmo agente.
 
@@ -201,6 +204,11 @@ As opções estão em [.env.example](.env.example). Traces podem ser locais, env
 ou desligados; o arquivo local alimenta a página Operação.
 
 ## Avaliações e limites
+
+As [melhorias para o portfólio gratuito](docs/entrega-portfolio-gratuito.md) acrescentam
+empacotamento completo, consumo parcial em falhas, ferramentas condicionais, backup e
+avaliação de conversas (`uv run olheiro-eval-chat --validate-only`). As notas reais abaixo
+pertencem à versão da F5; não medem essas novas alterações.
 
 Há **59 casos em três suítes**: Brasileirão (39), vendas (10) e estoque (10), com **44
 gabaritos SQL** e avaliadores determinísticos. Os demais casos verificam recusas e segurança.

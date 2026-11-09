@@ -5,6 +5,9 @@ Assim, trocar de modelo/provedor é só mudar o .env.
 """
 
 import tomllib
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Literal
 
@@ -13,8 +16,20 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from olheiro.storage import DEFAULT_LOG_BACKUP_COUNT, DEFAULT_LOG_MAX_BYTES
 
-# src/olheiro/config.py -> parents[2] é a raiz do projeto
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_ROOT = Path(__file__).resolve().parent
+RESOURCE_ROOT = PACKAGE_ROOT / "resources"
+_checkout = PACKAGE_ROOT.parents[1]
+PROJECT_ROOT = _checkout if (_checkout / "src/olheiro").resolve() == PACKAGE_ROOT else Path.cwd()
+
+
+def resource_path(relative: str) -> Path:
+    """Fixtures do checkout quando presentes; cópias empacotadas na instalação por wheel."""
+    path = Path(relative)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError("O recurso deve ser relativo ao projeto.")
+    checkout_path = PROJECT_ROOT / path
+    return checkout_path if checkout_path.exists() else RESOURCE_ROOT / path
+
 
 # Provedor (prefixo do nome do modelo) -> campo que guarda a chave dele
 PROVIDER_KEY_FIELDS: dict[str, str] = {
@@ -51,10 +66,10 @@ class Settings(BaseSettings):
     google_api_key: SecretStr | None = None
     anthropic_api_key: SecretStr | None = None
     duckdb_path: Path = Path("data/olheiro.duckdb")
-    raw_data_dir: Path = Path("data/raw")
+    raw_data_dir: Path = resource_path("data/raw")
     exports_dir: Path = Path("data/exports")
     workspace_path: Path = Path("data/workspace.duckdb")
-    glossary_path: Path | None = Path("semantic/glossary.toml")
+    glossary_path: Path | None = resource_path("semantic/glossary.toml")
     import_options_path: Path | None = None
     answer_cache_path: Path = Path("data/answer_cache.json")
     dashboard_path: Path = Path("data/dashboard.json")
@@ -72,7 +87,7 @@ class Settings(BaseSettings):
     olheiro_demo_model_enabled: bool = False
     olheiro_demo_total_question_limit: int = Field(default=10, ge=0)
     olheiro_demo_budget_path: Path = Path("data/demo-budget.json")
-    demo_examples_path: Path = Path("demo/examples.toml")
+    demo_examples_path: Path = resource_path("demo/examples.toml")
     # Observabilidade (F6). Traces OpenTelemetry: off, file (traces_path) ou otlp (backend).
     olheiro_tracing: Literal["off", "file", "otlp"] = "file"
     olheiro_otlp_endpoint: str = "http://localhost:4318/v1/traces"
@@ -155,7 +170,27 @@ class Settings(BaseSettings):
         return self.olheiro_session_question_limit
 
 
+_settings_override: ContextVar[Settings | None] = ContextVar("settings_override", default=None)
+
+
+@contextmanager
+def settings_scope(settings: Settings) -> Iterator[None]:
+    """Perfil explícito da entrada pública, restrito à execução da sessão atual."""
+    token = _settings_override.set(settings)
+    try:
+        yield
+    finally:
+        _settings_override.reset(token)
+
+
+def has_settings_scope() -> bool:
+    return _settings_override.get() is not None
+
+
 def get_settings() -> Settings:
     """Lê as configurações atuais (.env + ambiente)."""
+    overridden = _settings_override.get()
+    if overridden is not None:
+        return overridden.model_copy(deep=True)
     settings = Settings()
     return settings.for_dataset(settings.olheiro_dataset) if settings.olheiro_dataset else settings

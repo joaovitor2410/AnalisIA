@@ -31,11 +31,14 @@ jobs:
           enable-cache: true
       - run: uv python install
       - run: uv sync --locked
+      - run: uv run --locked python deploy/bundle_resources.py --check
       - run: uv run --locked ruff check .
       - run: uv run --locked ruff format --check .
       - run: uv run --locked mypy
       - run: uv run --locked pytest -q
+      - run: uv run --locked olheiro-eval-chat --validate-only
       - run: uv build
+      - run: uv run --locked python deploy/package_smoke.py
 
   container:
     needs: quality

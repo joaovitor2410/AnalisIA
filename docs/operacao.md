@@ -1,5 +1,9 @@
 # Preparação operacional local — F8C.1
 
+Em 09/11 foi acrescentado `olheiro-backup create/verify/restore`, com hashes e restauração
+para destino novo. Veja [backup pessoal](entrega-portfolio-gratuito.md#backup-pessoal-opcional).
+A demo gratuita de portfólio usa estado descartável e não precisa de volume/backup.
+
 Esta fase prepara a persistência antes da escolha de hospedagem. Cache e dashboard continuam
 em JSON; a mudança coordena escritores de processos diferentes no mesmo disco. A quota
 diária da demo passa a sobreviver a reinícios, e logs/traces locais têm rotação por tamanho.

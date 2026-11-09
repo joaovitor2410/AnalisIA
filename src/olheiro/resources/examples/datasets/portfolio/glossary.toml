@@ -1,0 +1,24 @@
+rules = [
+  "Dados fictícios criados para o portfólio. Não representam pessoas ou empresas reais.",
+  "Cada linha de orders é um pedido. customer_id é textual; preserve os zeros iniciais.",
+  "Faturamento realizado inclui apenas status = 'concluido'. Cancelamentos não geram receita.",
+  "amount é o valor total do pedido em reais. Ticket médio = média de amount nos concluídos.",
+  "Cada customer_id ocorre uma vez em customers. Use essa chave no JOIN.",
+  "A base cobre abril a setembro de 2026. Não contém custos, lucro, demanda ou dados de jogadores.",
+]
+
+[tables.orders]
+description = "Pedidos sintéticos de abril a setembro de 2026; um pedido por linha."
+[tables.orders.columns]
+order_id = "Identificador textual único do pedido."
+customer_id = "Chave textual de customers, com zeros iniciais."
+ordered_at = "Data do pedido."
+amount = { description = "Valor total do pedido.", unit = "BRL" }
+status = { description = "Situação do pedido.", list_values = true }
+
+[tables.customers]
+description = "Clientes inteiramente fictícios; uma linha por customer_id."
+[tables.customers.columns]
+customer_id = "Chave textual única, com zeros iniciais."
+customer_name = "Nome fictício do cliente."
+region = { description = "Região brasileira do cliente fictício.", list_values = true }

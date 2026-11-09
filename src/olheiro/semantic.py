@@ -5,6 +5,7 @@ sempre atualizado) e os valores reais das colunas marcadas com list_values.
 """
 
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -194,7 +195,13 @@ def labeled(label: str, text: str) -> str:
     return f"{label}: {text}" if text else label
 
 
-def render_context(glossary: Glossary, con: duckdb.DuckDBPyConnection) -> str:
+@dataclass(frozen=True)
+class SemanticContext:
+    text: str
+    truncated: bool
+
+
+def build_context(glossary: Glossary, con: duckdb.DuckDBPyConnection) -> SemanticContext:
     """Texto que entra nas instruções: tabelas, colunas (tipo + significado), valores e regras."""
     lines = ["Tabelas de dados (schema raw):"]
     if not glossary.tables:
@@ -253,8 +260,11 @@ def render_context(glossary: Glossary, con: duckdb.DuckDBPyConnection) -> str:
         "Use read_semantics para regras/descrições completas. "
         "Não suponha que tabelas omitidas não existem."
     )
-    return (
-        text[: MAX_CONTEXT_CHARS - len(note)] + note
-        if omitted or len(text) > MAX_CONTEXT_CHARS
-        else text
+    truncated = omitted or len(text) > MAX_CONTEXT_CHARS
+    return SemanticContext(
+        text[: MAX_CONTEXT_CHARS - len(note)] + note if truncated else text, truncated
     )
+
+
+def render_context(glossary: Glossary, con: duckdb.DuckDBPyConnection) -> str:
+    return build_context(glossary, con).text

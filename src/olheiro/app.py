@@ -6,7 +6,7 @@ Rodar:
 
 import streamlit as st
 
-from olheiro.config import get_settings
+from olheiro.config import get_settings, has_settings_scope
 from olheiro.datasets import discover_datasets
 from olheiro.db import WorkspaceInUseError
 from olheiro.ui.ask_page import ask_page
@@ -67,6 +67,13 @@ def show_sidebar() -> None:
 
 st.set_page_config(page_title="AnalisIA", page_icon="✦", layout="wide")
 apply_identity()
+if has_settings_scope():
+    st.info(
+        "Demonstração gratuita com dados fictícios e análises prontas. "
+        "Escolha uma sugestão, confira SQL/tabela/gráfico e fixe no dashboard. "
+        "Novas análises com IA estão disponíveis na execução local do projeto."
+    )
+    st.link_button("Código e execução local", "https://github.com/joaovitor2410/AnalisIA")
 try:
     with st.sidebar:
         show_sidebar()
