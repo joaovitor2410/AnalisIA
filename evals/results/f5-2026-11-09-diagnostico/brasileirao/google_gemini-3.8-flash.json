@@ -1,0 +1,842 @@
+{
+  "model": "google:gemini-3.8-flash",
+  "run_date": "2026-11-09",
+  "cases": [
+    {
+      "name": "campeao_2019",
+      "category": "simples",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true,
+        "mencoes": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito",
+        "mencoes": "ok"
+      },
+      "grounding": 1.0,
+      "requests": 2.0,
+      "tokens": 5940.0,
+      "cost_usd": 0.006465,
+      "seconds": 9.099147040993557,
+      "answer": "O campeão brasileiro de 2019 foi o **Flamengo**, somando 90 pontos em 38 partidas disputadas.",
+      "error": null,
+      "question": "Quem foi o campeão brasileiro de 2019?",
+      "output": {
+        "answerable": true,
+        "answer": "O campeão brasileiro de 2019 foi o **Flamengo**, somando 90 pontos em 38 partidas disputadas.",
+        "insights": [
+          "O Flamengo conquistou o título de 2019 com 28 vitórias, 6 empates e apenas 4 derrotas.",
+          "A equipe marcou 86 gols e sofreu 37, terminando com um saldo positivo de 49 gols."
+        ],
+        "sql": "SELECT season, team, points, played, won, draw, loss, goals, goals_taken, goals_diff\nFROM raw.brasileirao\nWHERE season = 2019 AND place = 1",
+        "columns": [
+          "season",
+          "team",
+          "points",
+          "played",
+          "won",
+          "draw",
+          "loss",
+          "goals",
+          "goals_taken",
+          "goals_diff"
+        ],
+        "rows": [
+          [
+            2019,
+            "Flamengo",
+            90,
+            38,
+            28,
+            6,
+            4,
+            86,
+            37,
+            49
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "vice_2010",
+      "category": "simples",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true,
+        "mencoes": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito",
+        "mencoes": "ok"
+      },
+      "grounding": 1.0,
+      "requests": 3.0,
+      "tokens": 9879.0,
+      "cost_usd": 0.01205025,
+      "seconds": 20.886419834001572,
+      "answer": "O vice-campeão do Campeonato Brasileiro de 2010 foi o Cruzeiro, terminando na 2ª colocação com 69 pontos.",
+      "error": null,
+      "question": "Quem foi o vice-campeão em 2010?",
+      "output": {
+        "answerable": true,
+        "answer": "O vice-campeão do Campeonato Brasileiro de 2010 foi o Cruzeiro, terminando na 2ª colocação com 69 pontos.",
+        "insights": [
+          "O Cruzeiro somou 69 pontos em 38 jogos disputados na edição de 2010.",
+          "A equipe obteve 20 vitórias, 9 empates e 9 derrotas, com saldo de gols positivo de +15 (53 gols pró e 38 contra)."
+        ],
+        "sql": "SELECT\n    season,\n    place,\n    team,\n    points,\n    played,\n    won,\n    draw,\n    loss,\n    goals,\n    goals_taken,\n    goals_diff\nFROM raw.brasileirao\nWHERE season = 2010 AND place = 2;",
+        "columns": [
+          "season",
+          "place",
+          "team",
+          "points",
+          "played",
+          "won",
+          "draw",
+          "loss",
+          "goals",
+          "goals_taken",
+          "goals_diff"
+        ],
+        "rows": [
+          [
+            2010,
+            2,
+            "Cruzeiro",
+            69,
+            38,
+            20,
+            9,
+            9,
+            53,
+            38,
+            15
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "pontos_flamengo_2019",
+      "category": "simples",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito"
+      },
+      "grounding": 1.0,
+      "requests": 2.0,
+      "tokens": 6073.0,
+      "cost_usd": 0.00688575,
+      "seconds": 8.298489166001673,
+      "answer": "No Campeonato Brasileiro de 2019, o **Flamengo** somou **90 pontos**, sagrando-se campeão da competição (1º lugar).",
+      "error": null,
+      "question": "Quantos pontos o Flamengo fez em 2019?",
+      "output": {
+        "answerable": true,
+        "answer": "No Campeonato Brasileiro de 2019, o **Flamengo** somou **90 pontos**, sagrando-se campeão da competição (1º lugar).",
+        "insights": [
+          "O Flamengo conquistou o título (1º lugar) em 2019 com 90 pontos conquistados em 38 jogos.",
+          "A campanha teve 28 vitórias, 6 empates e 4 derrotas.",
+          "O ataque rubro-negro marcou 86 gols, alcançando um saldo positivo de 49 gols."
+        ],
+        "sql": "SELECT \n    team, \n    season, \n    points, \n    place, \n    played, \n    won, \n    draw, \n    loss, \n    goals, \n    goals_diff \nFROM raw.brasileirao \nWHERE season = 2019 AND team = 'Flamengo';",
+        "columns": [
+          "team",
+          "season",
+          "points",
+          "place",
+          "played",
+          "won",
+          "draw",
+          "loss",
+          "goals",
+          "goals_diff"
+        ],
+        "rows": [
+          [
+            "Flamengo",
+            2019,
+            90,
+            1,
+            38,
+            28,
+            6,
+            4,
+            86,
+            49
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "jogos_2005",
+      "category": "simples",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito"
+      },
+      "grounding": 1.0,
+      "requests": 3.0,
+      "tokens": 10057.0,
+      "cost_usd": 0.01014975,
+      "seconds": 11.771403250008007,
+      "answer": "No Campeonato Brasileiro de 2005, cada time disputou **42 jogos**. A competição contou com 22 clubes, jogando todos contra todos em turno e returno.",
+      "error": null,
+      "question": "Quantos jogos cada time disputou no Brasileirão de 2005?",
+      "output": {
+        "answerable": true,
+        "answer": "No Campeonato Brasileiro de 2005, cada time disputou **42 jogos**. A competição contou com 22 clubes, jogando todos contra todos em turno e returno.",
+        "insights": [
+          "Todos os 22 times participantes da edição de 2005 disputaram exatamente 42 jogos."
+        ],
+        "sql": "SELECT played AS jogos_disputados, COUNT(team) AS total_times FROM raw.brasileirao WHERE season = 2005 GROUP BY played;",
+        "columns": [
+          "jogos_disputados",
+          "total_times"
+        ],
+        "rows": [
+          [
+            42,
+            22
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "fundacao_gremio",
+      "category": "simples",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito"
+      },
+      "grounding": 1.0,
+      "requests": 2.0,
+      "tokens": 5816.0,
+      "cost_usd": 0.00615,
+      "seconds": 7.65398112499679,
+      "answer": "O Grêmio (Grêmio Foot-Ball Porto Alegrense) foi fundado em 1903.",
+      "error": null,
+      "question": "Em que ano o Grêmio foi fundado?",
+      "output": {
+        "answerable": true,
+        "answer": "O Grêmio (Grêmio Foot-Ball Porto Alegrense) foi fundado em 1903.",
+        "insights": [
+          "O Grêmio Foot-Ball Porto Alegrense foi fundado no ano de 1903."
+        ],
+        "sql": "SELECT team, full_name, founded\nFROM raw.teams\nWHERE team = 'Grêmio'",
+        "columns": [
+          "team",
+          "full_name",
+          "founded"
+        ],
+        "rows": [
+          [
+            "Grêmio",
+            "Gremio Foot-Ball Porto Alegrense",
+            1903
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "estadio_bahia",
+      "category": "simples",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true,
+        "mencoes": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito",
+        "mencoes": "ok"
+      },
+      "grounding": 1.0,
+      "requests": 2.0,
+      "tokens": 5495.0,
+      "cost_usd": 0.00515025,
+      "seconds": 6.040544249990489,
+      "answer": "O estádio do Bahia cadastrado é a Arena Fonte Nova, localizada em Salvador (BA).",
+      "error": null,
+      "question": "Qual é o estádio do Bahia?",
+      "output": {
+        "answerable": true,
+        "answer": "O estádio do Bahia cadastrado é a Arena Fonte Nova, localizada em Salvador (BA).",
+        "insights": [
+          "A Arena Fonte Nova está registrada como o estádio principal do Bahia, situada na cidade de Salvador."
+        ],
+        "sql": "SELECT team, stadium, city, state FROM raw.teams WHERE team = 'Bahia';",
+        "columns": [
+          "team",
+          "stadium",
+          "city",
+          "state"
+        ],
+        "rows": [
+          [
+            "Bahia",
+            "Arena Fonte Nova",
+            "Salvador",
+            "Bahia"
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "times_2003",
+      "category": "simples",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito"
+      },
+      "grounding": 1.0,
+      "requests": 3.0,
+      "tokens": 8990.0,
+      "cost_usd": 0.0091125,
+      "seconds": 11.25864833300875,
+      "answer": "O Campeonato Brasileiro de 2003 foi disputado por 24 times.",
+      "error": null,
+      "question": "Quantos times disputaram o Brasileirão de 2003?",
+      "output": {
+        "answerable": true,
+        "answer": "O Campeonato Brasileiro de 2003 foi disputado por 24 times.",
+        "insights": [
+          "Ao todo, 24 clubes disputaram a edição de 2003 da Série A."
+        ],
+        "sql": "SELECT COUNT(DISTINCT team) AS total_times\nFROM raw.brasileirao\nWHERE season = 2003;",
+        "columns": [
+          "total_times"
+        ],
+        "rows": [
+          [
+            24
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "santos_2004",
+      "category": "simples",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true,
+        "mencoes": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito",
+        "mencoes": "ok"
+      },
+      "grounding": 1.0,
+      "requests": 2.0,
+      "tokens": 6224.0,
+      "cost_usd": 0.00747,
+      "seconds": 11.05172187500284,
+      "answer": "O Santos terminou o Campeonato Brasileiro de 2004 na **1ª posição**, sagrando-se campeão da competição.",
+      "error": null,
+      "question": "Em que posição o Santos terminou o campeonato de 2004?",
+      "output": {
+        "answerable": true,
+        "answer": "O Santos terminou o Campeonato Brasileiro de 2004 na **1ª posição**, sagrando-se campeão da competição.",
+        "insights": [
+          "O Santos conquistou o título de 2004 com 89 pontos obtidos em 46 partidas disputadas.",
+          "A campanha do time registrou 27 vitórias, 8 empates e 11 derrotas.",
+          "O ataque santista marcou 103 gols e a defesa sofreu 58, resultando em um saldo de gols de +45."
+        ],
+        "sql": "SELECT\n    season,\n    team,\n    place,\n    points,\n    played,\n    won,\n    draw,\n    loss,\n    goals,\n    goals_taken,\n    goals_diff\nFROM raw.brasileirao\nWHERE season = 2004 AND team = 'Santos'",
+        "columns": [
+          "season",
+          "team",
+          "place",
+          "points",
+          "played",
+          "won",
+          "draw",
+          "loss",
+          "goals",
+          "goals_taken",
+          "goals_diff"
+        ],
+        "rows": [
+          [
+            2004,
+            "Santos",
+            1,
+            89,
+            46,
+            27,
+            8,
+            11,
+            103,
+            58,
+            45
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "titulos_sao_paulo",
+      "category": "agregacao",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito"
+      },
+      "grounding": 0.36363636363636365,
+      "requests": 4.0,
+      "tokens": 14386.0,
+      "cost_usd": 0.0143925,
+      "seconds": 17.2952962499985,
+      "answer": "Desde 2003, o **São Paulo** conquistou **3 títulos** da Série A do Campeonato Brasileiro. As conquistas ocorreram de forma consecutiva nas temporadas de **2006, 2007 e 2008**.",
+      "error": null,
+      "question": "Quantos títulos o São Paulo conquistou desde 2003?",
+      "output": {
+        "answerable": true,
+        "answer": "Desde 2003, o **São Paulo** conquistou **3 títulos** da Série A do Campeonato Brasileiro. As conquistas ocorreram de forma consecutiva nas temporadas de **2006, 2007 e 2008**.",
+        "insights": [
+          "O São Paulo totaliza 3 títulos do Campeonato Brasileiro no período de 2003 a 2024.",
+          "As conquistas aconteceram em três anos consecutivos: 2006, 2007 e 2008."
+        ],
+        "sql": "SELECT \n    team,\n    COUNT(*) AS titulos,\n    STRING_AGG(season::VARCHAR, ', ' ORDER BY season) AS temporadas_campeao\nFROM raw.brasileirao\nWHERE team = 'São Paulo' AND place = 1 AND season >= 2003\nGROUP BY team;",
+        "columns": [
+          "team",
+          "titulos",
+          "temporadas_campeao"
+        ],
+        "rows": [
+          [
+            "São Paulo",
+            3,
+            "2006, 2007, 2008"
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "gols_2019",
+      "category": "agregacao",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito"
+      },
+      "grounding": 1.0,
+      "requests": 5.0,
+      "tokens": 17643.0,
+      "cost_usd": 0.01817325,
+      "seconds": 23.333179875000496,
+      "answer": "No Campeonato Brasileiro de 2019, foram marcados no total 876 gols.",
+      "error": null,
+      "question": "Quantos gols foram marcados no total no Brasileirão de 2019?",
+      "output": {
+        "answerable": true,
+        "answer": "No Campeonato Brasileiro de 2019, foram marcados no total 876 gols.",
+        "insights": [
+          "Foram disputadas 380 partidas entre os 20 clubes participantes na temporada de 2019.",
+          "A média registrada no campeonato foi de aproximadamente 2,31 gols por partida."
+        ],
+        "sql": "SELECT \n    season,\n    SUM(goals) AS total_gols,\n    COUNT(DISTINCT team) AS total_times,\n    CAST(SUM(played) / 2 AS BIGINT) AS total_partidas,\n    ROUND(SUM(goals) * 1.0 / (SUM(played) / 2), 2) AS media_gols_por_jogo\nFROM raw.brasileirao\nWHERE season = 2019\nGROUP BY season",
+        "columns": [
+          "season",
+          "total_gols",
+          "total_times",
+          "total_partidas",
+          "media_gols_por_jogo"
+        ],
+        "rows": [
+          [
+            2019,
+            876,
+            20,
+            380,
+            2.31
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "times_distintos",
+      "category": "agregacao",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito"
+      },
+      "grounding": 1.0,
+      "requests": 4.0,
+      "tokens": 15050.0,
+      "cost_usd": 0.0154665,
+      "seconds": 17.225779083004454,
+      "answer": "Entre 2003 e 2024, exatamente **44** times diferentes disputaram a Série A do Campeonato Brasileiro.",
+      "error": null,
+      "question": "Quantos times diferentes disputaram a Série A entre 2003 e 2024?",
+      "output": {
+        "answerable": true,
+        "answer": "Entre 2003 e 2024, exatamente **44** times diferentes disputaram a Série A do Campeonato Brasileiro.",
+        "insights": [
+          "Ao todo, 44 clubes distintos participaram de pelo menos uma edição da Série A entre as temporadas de 2003 e 2024."
+        ],
+        "sql": "SELECT COUNT(DISTINCT team) AS total_times\nFROM raw.brasileirao\nWHERE season BETWEEN 2003 AND 2024;",
+        "columns": [
+          "total_times"
+        ],
+        "rows": [
+          [
+            44
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "temporadas_mais_de_20_times",
+      "category": "agregacao",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito"
+      },
+      "grounding": 0.8,
+      "requests": 2.0,
+      "tokens": 6316.0,
+      "cost_usd": 0.007809,
+      "seconds": 11.972732583002653,
+      "answer": "O Campeonato Brasileiro da Série A teve mais de 20 times em três temporadas: **2003**, **2004** e **2005**.\n\n- **2003**: 24 times (46 jogos)\n- **2004**: 24 times (46 jogos)\n- **2005**: 22 times (42 jogos)\n\nA partir da temporada de 2006, o campeonato consolidou o formato atual com 20 participantes (3",
+      "error": null,
+      "question": "Em quais temporadas o campeonato teve mais de 20 times?",
+      "output": {
+        "answerable": true,
+        "answer": "O Campeonato Brasileiro da Série A teve mais de 20 times em três temporadas: **2003**, **2004** e **2005**.\n\n- **2003**: 24 times (46 jogos)\n- **2004**: 24 times (46 jogos)\n- **2005**: 22 times (42 jogos)\n\nA partir da temporada de 2006, o campeonato consolidou o formato atual com 20 participantes (38 rodadas).",
+        "insights": [
+          "As temporadas de 2003 e 2004 contaram com o maior número de clubes da era dos pontos corridos (24 times cada).",
+          "A temporada de 2005 teve 22 times, funcionando como transição para o formato definitivo.",
+          "Apenas essas 3 temporadas ultrapassaram 20 participantes no período analisado (2003–2024)."
+        ],
+        "sql": "SELECT \n    season, \n    COUNT(team) AS total_times\nFROM raw.brasileirao\nGROUP BY season\nHAVING COUNT(team) > 20\nORDER BY season ASC;",
+        "columns": [
+          "season",
+          "total_times"
+        ],
+        "rows": [
+          [
+            2003,
+            24
+          ],
+          [
+            2004,
+            24
+          ],
+          [
+            2005,
+            22
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "media_gols_campeoes",
+      "category": "agregacao",
+      "checks": {
+        "comportamento": true,
+        "evidencia": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "resultado equivalente ao gabarito"
+      },
+      "grounding": 0.5,
+      "requests": 5.0,
+      "tokens": 19355.0,
+      "cost_usd": 0.02067225,
+      "seconds": 26.94335062499158,
+      "answer": "A média de gols marcados pelos campeões do Campeonato Brasileiro por pontos corridos (2003 a 2024) é de **68,82 gols** por temporada, o que equivale a aproximadamente **1,76 gol por partida**.\n\nAo considerar apenas o formato com 20 clubes e 38 rodadas (adotado a partir de 2006), a média de gols marc",
+      "error": null,
+      "question": "Qual é a média de gols marcados pelos campeões?",
+      "output": {
+        "answerable": true,
+        "answer": "A média de gols marcados pelos campeões do Campeonato Brasileiro por pontos corridos (2003 a 2024) é de **68,82 gols** por temporada, o que equivale a aproximadamente **1,76 gol por partida**.\n\nAo considerar apenas o formato com 20 clubes e 38 rodadas (adotado a partir de 2006), a média de gols marcados pelos campeões é de **64,32 gols** por temporada (cerca de 1,69 gol por jogo).",
+        "insights": [
+          "Nas 22 temporadas analisadas, a média geral foi de 68,82 gols marcados por campeão (1,76 gol por jogo).",
+          "No formato atual com 38 rodadas (2006–2024), a média dos campeões recua para 64,32 gols por temporada.",
+          "A maior marca de gols de um campeão no período foi de 103 gols, enquanto a menor foi de 50 gols."
+        ],
+        "sql": "SELECT \n    ROUND(AVG(goals), 2) AS media_gols,\n    ROUND(AVG(CAST(goals AS DOUBLE) / played), 2) AS media_gols_por_jogo,\n    ROUND(AVG(CASE WHEN season >= 2006 THEN goals END), 2) AS media_gols_desde_2006,\n    MIN(goals) AS menor_total_gols,\n    MAX(goals) AS maior_total_gols,\n    COUNT(*) AS total_temporadas\nFROM raw.brasileirao\nWHERE place = 1;",
+        "columns": [
+          "media_gols",
+          "media_gols_por_jogo",
+          "media_gols_desde_2006",
+          "menor_total_gols",
+          "maior_total_gols",
+          "total_temporadas"
+        ],
+        "rows": [
+          [
+            68.82,
+            1.76,
+            64.32,
+            50,
+            103,
+            22
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "maior_pontuacao",
+      "category": "agregacao",
+      "checks": {
+        "comportamento": true,
+        "evidencia": false,
+        "mencoes": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "5 linhas; o gabarito tem 1",
+        "mencoes": "ok"
+      },
+      "grounding": 0.9285714285714286,
+      "requests": 3.0,
+      "tokens": 12666.0,
+      "cost_usd": 0.0163875,
+      "seconds": 24.132914332993096,
+      "answer": "A maior pontuação absoluta de um time em uma única temporada da Série A foi de **100 pontos**, conquistada pelo **Cruzeiro** no campeonato de **2003** (disputado em 46 rodadas com 24 participantes). Não houve empates na 1ª colocação.",
+      "error": null,
+      "question": "Qual foi a maior pontuação absoluta de um time em uma temporada?",
+      "output": {
+        "answerable": true,
+        "answer": "A maior pontuação absoluta de um time em uma única temporada da Série A foi de **100 pontos**, conquistada pelo **Cruzeiro** no campeonato de **2003** (disputado em 46 rodadas com 24 participantes). Não houve empates na 1ª colocação.",
+        "insights": [
+          "O Cruzeiro de 2003 é o único clube a atingir a marca de 100 pontos em uma única edição dos pontos corridos.",
+          "A segunda maior pontuação absoluta pertence ao Flamengo de 2019, com 90 pontos obtidos em 38 jogos (recorde do formato com 20 clubes).",
+          "Quatro das cinco maiores pontuações absolutas da história ocorreram nas edições de 2003 e 2004, que contavam com 46 partidas por time."
+        ],
+        "sql": "WITH ranked AS (\n    SELECT \n        team,\n        season,\n        points,\n        played,\n        RANK() OVER (ORDER BY points DESC) AS rnk\n    FROM raw.brasileirao\n)\nSELECT \n    team || ' (' || season || ')' AS time_temporada,\n    team,\n    season,\n    points,\n    played,\n    rnk\nFROM ranked\nWHERE rnk <= 5\nORDER BY rnk, season;",
+        "columns": [
+          "time_temporada",
+          "team",
+          "season",
+          "points",
+          "played",
+          "rnk"
+        ],
+        "rows": [
+          [
+            "Cruzeiro (2003)",
+            "Cruzeiro",
+            2003,
+            100,
+            46,
+            1
+          ],
+          [
+            "Flamengo (2019)",
+            "Flamengo",
+            2019,
+            90,
+            38,
+            2
+          ],
+          [
+            "Santos (2004)",
+            "Santos",
+            2004,
+            89,
+            46,
+            3
+          ],
+          [
+            "Santos (2003)",
+            "Santos",
+            2003,
+            87,
+            46,
+            4
+          ],
+          [
+            "Athletico Paranaense (2004)",
+            "Athletico Paranaense",
+            2004,
+            86,
+            46,
+            5
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    },
+    {
+      "name": "maiores_campeoes_empate",
+      "category": "ranking",
+      "checks": {
+        "comportamento": true,
+        "evidencia": false,
+        "mencoes": true
+      },
+      "reasons": {
+        "comportamento": "ok",
+        "evidencia": "9 linhas; o gabarito tem 2",
+        "mencoes": "ok"
+      },
+      "grounding": 0.8571428571428571,
+      "requests": 2.0,
+      "tokens": 6566.0,
+      "cost_usd": 0.0086205,
+      "seconds": 12.938533459004248,
+      "answer": "Desde 2003 (início da era dos pontos corridos), os maiores campeões brasileiros são **Corinthians** e **Palmeiras**, empatados no topo do ranking com **4 títulos** cada.\n\nLogo atrás aparecem **Cruzeiro**, **Flamengo** e **São Paulo**, empatados na 3ª posição com **3 títulos** cada. Ao todo, 9 clubes",
+      "error": null,
+      "question": "Quais times têm mais títulos brasileiros desde 2003?",
+      "output": {
+        "answerable": true,
+        "answer": "Desde 2003 (início da era dos pontos corridos), os maiores campeões brasileiros são **Corinthians** e **Palmeiras**, empatados no topo do ranking com **4 títulos** cada.\n\nLogo atrás aparecem **Cruzeiro**, **Flamengo** e **São Paulo**, empatados na 3ª posição com **3 títulos** cada. Ao todo, 9 clubes diferentes conquistaram o título entre 2003 e 2024.",
+        "insights": [
+          "Corinthians e Palmeiras dividem a 1ª colocação histórica da era dos pontos corridos com 4 títulos cada.",
+          "Cruzeiro, Flamengo e São Paulo dividem a 3ª colocação com 3 conquistas cada.",
+          "Apenas 9 clubes foram campeões da Série A entre 2003 e 2024."
+        ],
+        "sql": "SELECT \n    team, \n    COUNT(*) AS titulos, \n    RANK() OVER (ORDER BY COUNT(*) DESC) AS posicao\nFROM raw.brasileirao\nWHERE place = 1\nGROUP BY team\nORDER BY titulos DESC, team ASC",
+        "columns": [
+          "team",
+          "titulos",
+          "posicao"
+        ],
+        "rows": [
+          [
+            "Corinthians",
+            4,
+            1
+          ],
+          [
+            "Palmeiras",
+            4,
+            1
+          ],
+          [
+            "Cruzeiro",
+            3,
+            3
+          ],
+          [
+            "Flamengo",
+            3,
+            3
+          ],
+          [
+            "São Paulo",
+            3,
+            3
+          ],
+          [
+            "Fluminense",
+            2,
+            6
+          ],
+          [
+            "Atlético Mineiro",
+            1,
+            7
+          ],
+          [
+            "Botafogo",
+            1,
+            7
+          ],
+          [
+            "Santos",
+            1,
+            7
+          ]
+        ],
+        "save_requested": false,
+        "raw_intact": true,
+        "leaked_secret": false,
+        "error": null
+      }
+    }
+  ],
+  "suite": "brasileirao",
+  "suite_revision": "16500d6c20527641ab474f121061214affc160d2328008e3f5a0d8d7b49cfc1f"
+}

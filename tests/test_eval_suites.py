@@ -10,6 +10,7 @@ import pytest
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.usage import UsageLimits
 from pydantic_evals import Case, Dataset
 
 from olheiro import evaluation
@@ -22,6 +23,7 @@ from olheiro.evaluation import (
     grounding,
     load_cases,
     main,
+    regrade_summary,
     save_summary,
     summarize,
 )
@@ -95,7 +97,16 @@ def test_validation_cli_never_builds_model_or_loads_personal_settings(
     assert f"{suite_name}:" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("args", [["--limit", "0"], ["--limit", "-1"], ["--concurrency", "0"]])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--limit", "0"],
+        ["--limit", "-1"],
+        ["--concurrency", "0"],
+        ["--request-limit", "0"],
+        ["--tool-calls-limit", "-1"],
+    ],
+)
 def test_invalid_limits_fail_before_model(args: list[str]) -> None:
     with pytest.raises(SystemExit, match="2"):
         main(args)
@@ -193,6 +204,200 @@ def test_results_for_same_model_keep_domains_separate(tmp_path: Path) -> None:
         assert path.is_file()
     readme = (tmp_path / "README.md").read_text()
     assert "| Suíte | estoque | vendas |" in readme
+
+
+def test_archived_runs_do_not_enter_the_current_comparison(tmp_path: Path) -> None:
+    from olheiro.evaluation import RunSummary
+
+    archived = RunSummary(model="archive", run_date=date(2026, 11, 4), cases=[], suite="vendas")
+    save_summary(archived, tmp_path / "previous-run")
+    current = archived.model_copy(update={"model": "current"})
+    save_summary(current, tmp_path)
+    readme = (tmp_path / "README.md").read_text()
+    assert "current" in readme
+    assert "archive" not in readme
+
+
+def test_request_limit_stops_a_looping_model_and_records_the_failure(tmp_path: Path) -> None:
+    calls = 0
+
+    def loop(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        return ModelResponse(parts=[ToolCallPart("run_sql", {"query": "SELECT 1"})])
+
+    suite = SUITES["vendas"]
+    dataset = load_cases(suite.cases)
+    dataset.cases = dataset.cases[:1]
+    with suite_database(suite) as (con, glossary):
+        report = evaluate(
+            dataset,
+            con,
+            glossary,
+            FunctionModel(loop),
+            "offline",
+            RunLog(tmp_path / "runs.jsonl"),
+            usage_limits=UsageLimits(request_limit=2),
+        )
+    case = summarize(report, "offline", suite.name).cases[0]
+    assert calls == 2
+    assert case.checks["comportamento"] is False
+    assert case.error is not None and "request_limit" in case.error
+    assert case.requests == 2
+
+
+def test_cli_preserves_full_evidence_and_uses_bounded_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from olheiro.evaluation import RunSummary
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {
+                        "answerable": True,
+                        "answer": "O faturamento realizado é 460,40 reais.",
+                        "sql": "SELECT sum(amount) FROM raw.orders WHERE status='concluido'",
+                    },
+                )
+            ]
+        )
+
+    def model(model_id: str, api_key: object, retries: int) -> FunctionModel:
+        assert retries == 0
+        return FunctionModel(respond)
+
+    original = evaluation.evaluate
+
+    def bounded(*args: Any, **kwargs: Any) -> Any:
+        assert kwargs["usage_limits"].request_limit == 2
+        assert kwargs["usage_limits"].tool_calls_limit == 3
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(evaluation, "google_model", model)
+    monkeypatch.setattr(evaluation, "evaluate", bounded)
+    monkeypatch.setattr(evaluation, "setup_tracing", lambda settings: None)
+    main(
+        [
+            "--suite",
+            "vendas",
+            "--model",
+            "offline",
+            "--limit",
+            "1",
+            "--yes",
+            "--request-limit",
+            "2",
+            "--tool-calls-limit",
+            "3",
+            "--output-dir",
+            str(tmp_path),
+        ]
+    )
+    summary = RunSummary.model_validate_json((tmp_path / "vendas/offline.json").read_text())
+    case = summary.cases[0]
+    assert case.question == "Qual o faturamento realizado em reais?"
+    assert case.output is not None
+    assert case.output.sql is not None and "sum(amount)" in case.output.sql
+    assert case.output.rows == [[460.4]]
+    assert case.checks["evidencia"] is True
+    original = (tmp_path / "vendas/offline.json").read_bytes()
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("Reavaliação offline tentou construir modelo ou ler segredos.")
+
+    monkeypatch.setattr(evaluation, "Settings", forbidden)
+    monkeypatch.setattr(evaluation, "google_model", forbidden)
+    destination = tmp_path / "regraded"
+    main(["--regrade", str(tmp_path / "vendas/offline.json"), "--output-dir", str(destination)])
+    graded = RunSummary.model_validate_json((destination / "vendas/offline.json").read_text())
+    assert (tmp_path / "vendas/offline.json").read_bytes() == original
+    assert graded.cases[0].requests == case.requests
+    assert graded.cases[0].seconds == case.seconds
+    assert graded.grading_revision == SUITES["vendas"].revision()
+    assert graded.suite_revision == summary.suite_revision
+
+    with pytest.raises(SystemExit, match="preservar"):
+        main(["--regrade", str(tmp_path / "vendas/offline.json"), "--output-dir", str(tmp_path)])
+    assert case.output is not None
+    case.output.rows = [[999]]
+    with pytest.raises(ValueError, match="evidência mudou"):
+        regrade_summary(summary)
+
+
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        (
+            "SELECT c.region, coalesce(sum(o.amount),0) FROM raw.customers c "
+            "LEFT JOIN raw.orders o ON c.customer_id=o.customer_id AND o.status='concluido' "
+            "GROUP BY c.region",
+            True,
+        ),
+        (
+            "SELECT c.region, sum(o.amount) FROM raw.customers c "
+            "JOIN raw.orders o USING(customer_id) GROUP BY c.region",
+            False,
+        ),
+    ],
+)
+def test_explicit_alternative_accepts_zero_regions_but_rejects_cancelled_revenue(
+    sql: str, expected: bool, tmp_path: Path
+) -> None:
+    suite = SUITES["vendas"]
+    dataset = load_cases(suite.cases)
+    dataset.cases = [case for case in dataset.cases if case.name == "receita_por_regiao"]
+    alternative = (
+        "SELECT c.region, coalesce(sum(o.amount),0) FROM raw.customers c "
+        "LEFT JOIN raw.orders o ON c.customer_id=o.customer_id AND o.status='concluido' "
+        "GROUP BY c.region"
+    )
+    assert dataset.cases[0].metadata is not None
+    dataset.cases[0].metadata.alternative_sql = [alternative]
+
+    def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(
+            parts=[
+                ToolCallPart(
+                    info.output_tools[0].name,
+                    {
+                        "answerable": True,
+                        "answer": "Confira a tabela.",
+                        "sql": sql,
+                    },
+                )
+            ]
+        )
+
+    with suite_database(suite) as (con, glossary):
+        report = evaluate(
+            dataset,
+            con,
+            glossary,
+            FunctionModel(respond),
+            "offline",
+            RunLog(tmp_path / "runs.jsonl"),
+        )
+    assert summarize(report, "offline").cases[0].checks["evidencia"] is expected
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "DELETE FROM raw.orders",
+        "SELECT 1 FROM raw.orders CROSS JOIN raw.orders CROSS JOIN raw.orders",
+    ],
+)
+def test_alternative_goldens_are_guarded_and_never_truncated(sql: str) -> None:
+    suite = SUITES["vendas"]
+    dataset = load_cases(suite.cases)
+    dataset.cases = dataset.cases[:1]
+    assert dataset.cases[0].metadata is not None
+    dataset.cases[0].metadata.alternative_sql = [sql]
+    with suite_database(suite) as (con, _), pytest.raises(ValueError):
+        golden_results(dataset, con)
 
 
 def test_grounding_requires_evidence_for_numbers_previously_treated_as_seasons() -> None:

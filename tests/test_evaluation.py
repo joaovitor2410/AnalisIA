@@ -141,6 +141,24 @@ def test_grounding_flags_numbers_missing_from_the_evidence() -> None:
     assert score == pytest.approx(3 / 4)  # 2019 (pergunta), 78,95 (escala) e 90 ancorados
 
 
+def test_grounding_reads_numbers_in_textual_evidence_without_rescaling_money() -> None:
+    details = EvalOutput(
+        answerable=True,
+        answer="São 10 no Central e 2 na Loja.",
+        rows=[["Central: 10, Loja: 2"]],
+    )
+    assert grounding(details, "Qual a distribuição?") == (1.0, [])
+    money = EvalOutput(answerable=True, answer="O total é R$ 46040.", rows=[[460.4]])
+    assert grounding(money, "Qual o total?") == (0.0, ["46040"])
+
+
+def test_grounding_only_converts_explicit_percentage_claims() -> None:
+    output = EvalOutput(answerable=True, answer="Foram 25 por cento.", rows=[[0.25]])
+    assert grounding(output, "Qual a participação?") == (1.0, [])
+    output.answer = "Foram 25 pedidos."
+    assert grounding(output, "Quantos pedidos?") == (0.0, ["25"])
+
+
 Step = Callable[[AgentInfo], ModelResponse]
 
 

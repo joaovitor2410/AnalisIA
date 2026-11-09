@@ -24,7 +24,8 @@ cases:
   - name: jogos_2005
     inputs: Quantos jogos cada time disputou no Brasileirão de 2005?
     metadata: {category: simples, expect: answer,
-               golden_sql: "SELECT DISTINCT played FROM raw.brasileirao WHERE season = 2005"}
+               golden_sql: "SELECT DISTINCT played FROM raw.brasileirao WHERE season = 2005",
+               alternative_sql: ["SELECT team, played FROM raw.brasileirao WHERE season = 2005"]}
   - name: fundacao_gremio
     inputs: Em que ano o Grêmio foi fundado?
     metadata: {category: simples, expect: answer,
@@ -98,7 +99,8 @@ cases:
   - name: regiao_titulos
     inputs: Qual região do Brasil tem mais títulos?
     metadata: {category: juncao, expect: answer, mentions: [Sudeste],
-               golden_sql: "SELECT t.region, count(*) FROM raw.brasileirao b JOIN raw.teams t USING (team) WHERE b.place = 1 GROUP BY t.region"}
+               golden_sql: "SELECT t.region, count(*) FROM raw.brasileirao b JOIN raw.teams t USING (team) WHERE b.place = 1 GROUP BY t.region",
+               alternative_sql: ["SELECT CASE t.region WHEN 'Southeast' THEN 'Sudeste' WHEN 'South' THEN 'Sul' WHEN 'Northeast' THEN 'Nordeste' WHEN 'North' THEN 'Norte' WHEN 'Central' THEN 'Centro-Oeste' ELSE t.region END AS regiao, count(*) FROM raw.brasileirao b JOIN raw.teams t USING (team) WHERE b.place = 1 GROUP BY t.region"]}
   - name: titulos_por_estado
     inputs: Quantos títulos cada estado conquistou?
     metadata: {category: juncao, expect: answer,

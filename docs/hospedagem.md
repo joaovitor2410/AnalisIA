@@ -97,6 +97,7 @@ O piloto de qualquer opção usará `OLHEIRO_DEMO_MODE=true` e
 4. Executar o piloto com modelo desabilitado, health, interface, isolamento e quota.
 5. Habilitar perguntas ao modelo somente com configuração de limites também no provedor.
 
-O custo do Gemini não foi estimado aqui: o benchmark real F5 e o faturamento continuam
-pendentes. Esta comparação não cria assinatura, domínio nem infraestrutura e não publica
+O custo mensal do Gemini não foi estimado nesta comparação. Em 09/11, a
+[F5 real](f5-2026-11-09.md) mediu custo e consumo por caso, sem definir orçamento mensal
+nem contratar serviços. Esta comparação não cria assinatura, domínio nem infraestrutura e não publica
 os CSVs em outro serviço. A escolha do autor determinará a implementação da próxima etapa.

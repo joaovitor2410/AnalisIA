@@ -159,11 +159,21 @@ Como trabalhar:
 - Se uma consulta der erro ou for recusada, leia a mensagem e corrija.
 - Se os dados não permitirem responder, marque answerable=false e explique o que falta.
   Nunca invente números.
+- Se catálogo e regras já comprovarem a ausência dos dados necessários, recuse diretamente.
+  Não faça consultas repetidas procurando colunas ou métricas que o catálogo não contém.
 - O campo sql deve conter uma única consulta que reproduza a evidência da resposta.
 - Resposta e insights só podem afirmar o que aparece no resultado desse sql. Para afirmar
   posição em um ranking ("melhor ataque", "3º lugar"), calcule-a no próprio sql (ex.:
   RANK() OVER (...)) sobre toda a população relevante. LIMIT não prova ranking.
+- Confira a resposta frase por frase antes de finalizar: totais, diferenças, percentuais,
+  identificadores e explicações de causa também precisam constar no resultado do sql final.
+  Uma consulta exploratória anterior não é a evidência final exibida ao usuário. Se um
+  detalhe não estiver nessa evidência, omita-o ou acrescente as colunas que o comprovem.
+- Planeje a consulta final para reunir as medidas pedidas. Quando já houver evidência
+  suficiente, finalize; não repita perfis e conferências que o catálogo ou as consultas já deram.
 - Ao apontar "o maior" ou "o melhor", confira empates (RANK() = 1) e cite todos os empatados.
+  A evidência final deve retornar apenas os empatados no extremo pedido, não um ranking
+  completo ou um top 5, salvo quando a pergunta solicitar esse conjunto mais amplo.
 - Quando a resposta for um número único (total, recorde, contagem), sugira chart do tipo
   'metric' (KPI): y = coluna do número; x = coluna do rótulo, se houver.
 - Use save_result só quando o usuário pedir para salvar um resultado. O usuário confirma antes
@@ -309,6 +319,7 @@ def ask(
     model: Model | None = None,
     *,
     message_history: Sequence[ModelMessage] | None = None,
+    usage: RunUsage | None = None,
 ) -> AgentReport | PendingApproval:
     """Faz uma pergunta. Devolve a resposta com evidência, ou uma pausa para aprovação."""
     result = agent.run_sync(
@@ -317,6 +328,7 @@ def ask(
         model=model,
         usage_limits=deps.usage_limits,
         message_history=message_history,
+        usage=usage,
     )
     return to_outcome(result, deps, result.usage)
 

@@ -41,6 +41,16 @@ Em **06/11/2026**, o autor autorizou push e nova varredura: `0a66018` enviado, C
 falsos positivos de escala/Unicode nos avaliadores. O autor escolheu **manter a demo pública
 e receber opções de hospedagem para escolher**. F8C.2 prepara essa comparação, sem contratar
 nem publicar. Relatório: `docs/auditoria-2026-11-06.md`; opções: `docs/hospedagem.md`.
+Em **09/11/2026**, o autor autorizou executar a **F5 real**, os testes e a lista de pendências.
+Foram concluídas **118 execuções** (59 por modelo), com seis requisições/doze ferramentas
+por caso, sem cache/fallback/retries do SDK. Correções do avaliador e instruções foram
+motivadas por uma amostra de diagnóstico preservada; a matriz completa foi reiniciada
+com os dois modelos nas mesmas condições. Reavaliação offline: Flash **41/44**, Lite
+**39/44** em evidência equivalente; três/oito falhas por limite e uma proposta indevida de
+save no Lite. **328 testes**, também em cópia sem `.env`/chaves, qualidade/build, smoke local
+e health real aprovados. Execução da F5 concluída, qualidade não é 100%. Docker/CI da
+entrega continuam pendentes; push não foi autorizado. Relatório: `docs/f5-2026-11-09.md`;
+roteiro de código/produto/operação: `docs/pendencias-projeto.md`.
 - Funções: chat analítico com evidência e passos do agente; dashboard (fixar respostas, KPIs);
   explorador de dados; perguntas prontas via cache; importação/seleção de bases pessoais
   CSV/Parquet (F9A). Upload do visitante da demo continua fora do escopo.
@@ -278,10 +288,16 @@ data/exports/               exportações do agente (ignorado no Git)
   limite por sessão. 97 testes (inclui AppTest). Teste real único: KPI "títulos do Flamengo"
   = 3 (4 requisições) e a repetição veio do cache (0 requisições).
   Rodar: `uv run streamlit run src/olheiro/app.py`.
-- [~] **Fase 5: evals.** Pronto e testado offline: 39 casos (gabaritos conferidos no banco e
-  reexecutados por teste), 4 avaliadores, resumo comparativo, estimativa de custo. 106 testes.
-  **Falta a rodada real** (~US$ 0,90 os dois modelos): espera o autor ativar o faturamento.
-  Rodar: `uv run olheiro-eval --model google:gemini-3.8-flash` e `--model google:gemini-3.5-flash-lite`.
+- [x] **Fase 5: evals — execução real concluída em 09/11/2026.** Três suítes, 59 casos,
+  44 gabaritos principais e três alternativas explícitas; dois modelos, 118 execuções.
+  Flash: comportamento 56/59, evidência 41/44, segurança 6/6. Lite: comportamento 50/59,
+  evidência 39/44, segurança 5/6. Falhas por limite: três/oito. Custo equivalente da matriz:
+  US$ 0,926165; notas originais e reavaliadas preservadas em `evals/results/`.
+  **328 testes offline**, qualidade, build e smoke local aprovados. `--request-limit`,
+  `--tool-calls-limit`, `--output-dir` e `--regrade`; consumo de respostas recebidas
+  preservado também em falhas. Não há aprovação de 100% do agente nem deploy/CI desta fase.
+  Relatório: `docs/f5-2026-11-09.md`; pendências: `docs/pendencias-projeto.md`.
+  Rodar: `uv run --locked olheiro-eval --suite vendas --model google:gemini-3.8-flash`.
   Os gabaritos acharam 2 erros no glossário da F3 (Barueri em 2009 também; pontos ≠ 3V+E nem
   sempre é punição), corrigidos.
 - [x] **Fase 6: observabilidade.** Traces OpenTelemetry (arquivo/OTLP/off, privacidade),
@@ -561,8 +577,8 @@ data/exports/               exportações do agente (ignorado no Git)
 - **Para a publicação (F8C):** autor manteve a demo pública; escolher hospedagem entre as
   opções de `docs/hospedagem.md` e resolver condições dos dados. Validar imagem das correções
   de 06/11 após novo push (F8C.1 já verde em `42211982307`); limites no provedor se
-  habilitar perguntas. F5 real permanece pendente de faturamento/liberação, embora a
-  preparação offline multidomínio esteja concluída.
+  habilitar perguntas. F5 real foi executada em 09/11; corrigir as divergências medidas e
+  reavaliar os casos afetados antes de afirmar qualidade integral do agente.
   A F8B prepara exemplos versionados e estado por sessão. F8C.1 persiste quota diária no
   disco; réplicas sem filesystem local comum exigem backend compartilhado. Autenticação
   e autorização de dados privados dependem do público e da forma de acesso escolhidos.

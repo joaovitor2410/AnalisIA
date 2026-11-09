@@ -132,7 +132,7 @@ novo push/CI. Docker continua indisponível no Mac de desenvolvimento.
 - Autenticação e autorização por usuário caso a ferramenta exponha dados particulares.
 - Backend compartilhado de estado/quota para réplicas sem o mesmo disco local.
 - Política automatizada de backup, remoção de bases e retenção de versões semânticas.
-- Benchmark real F5, após faturamento e execução liberados.
+- Corrigir e reavaliar as divergências da [F5 real de 09/11](f5-2026-11-09.md), já executada.
 - Resolver as condições dos dados do futebol ou escolher uma demo com dados sintéticos.
 
 Esses itens não são apresentados como concluídos pela coordenação de arquivos locais.

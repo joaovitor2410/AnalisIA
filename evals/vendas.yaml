@@ -12,6 +12,8 @@ cases:
       category: join
       expect: answer
       golden_sql: "SELECT c.region, sum(o.amount) FROM raw.orders o JOIN raw.customers c USING (customer_id) WHERE o.status = 'concluido' GROUP BY c.region"
+      alternative_sql:
+        - "SELECT c.region, coalesce(sum(o.amount),0) FROM raw.customers c LEFT JOIN raw.orders o ON c.customer_id=o.customer_id AND o.status='concluido' GROUP BY c.region"
   - name: ticket_medio
     inputs: Qual o ticket médio dos pedidos concluídos em reais?
     metadata:

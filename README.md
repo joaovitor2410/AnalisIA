@@ -213,13 +213,19 @@ uv run --locked olheiro-eval --suite vendas --validate-only
 uv run --locked olheiro-eval --suite estoque --validate-only
 ```
 
-A rodada comparativa com modelos reais aguarda ativação do faturamento e liberação do autor.
+A rodada real de **09/11/2026** executou os 59 casos em cada modelo: **118 execuções**.
+Após corrigir apresentações válidas dos gabaritos, o Flash teve evidência equivalente em
+**41/44 casos** e o Lite em **39/44**. Houve três/oito falhas por limite, respectivamente;
+as notas não significam aprovação de todas as respostas. Veja o
+[relatório da F5 e dos 328 testes](docs/f5-2026-11-09.md) e a
+[lista priorizada de pendências](docs/pendencias-projeto.md).
 
 ```bash
 uv run olheiro-eval --suite vendas --model google:gemini-3.8-flash
 ```
 
-O comando apresenta estimativa e pede confirmação de custo. Testes com modelo falso não
+O comando apresenta estimativa e pede confirmação de custo. Use `--output-dir` para separar
+rodadas e `--regrade` para reaplicar os avaliadores às saídas salvas sem modelo. Testes com modelo falso não
 substituem a rodada real. Resultados são separados por suíte/modelo e incluem a revisão dos
 arquivos usados. O [guia de avaliações](docs/avaliacoes.md) detalha casos, execução e limites.
 

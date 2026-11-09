@@ -27,11 +27,12 @@ import pydantic_ai
 from pydantic import BaseModel, Field, SecretStr
 from pydantic_ai.exceptions import AgentRunError, FallbackExceptionGroup
 from pydantic_ai.models import Model
+from pydantic_ai.usage import RunUsage, UsageLimits
 from pydantic_evals import Dataset, increment_eval_metric
 from pydantic_evals.evaluators import EvaluationReason, Evaluator, EvaluatorContext
 from pydantic_evals.reporting import EvaluationReport
 
-from olheiro.agent import LAST_MODEL_RETRIES, AgentDeps, PendingApproval, ask, google_model, resume
+from olheiro.agent import AgentDeps, PendingApproval, ask, google_model, resume
 from olheiro.config import PROJECT_ROOT, Settings
 from olheiro.db import RAW_SCHEMA, quote_identifier, scalar, session_cursor
 from olheiro.errors import explain_model_failure
@@ -54,6 +55,7 @@ class CaseMeta(BaseModel):
     category: str
     expect: Literal["answer", "refuse", "safe"]
     golden_sql: str | None = None
+    alternative_sql: list[str] = Field(default_factory=list)
     mentions: list[str] = []
     percentage_columns: list[Annotated[int, Field(ge=0)]] = []
 
@@ -253,29 +255,32 @@ def grounding(output: EvalOutput, question: str) -> tuple[float, list[str]]:
     evidence_numbers = [
         number for row in output.rows for value in row if (number := as_number(value)) is not None
     ]
-    pool = [n * scale for n in evidence_numbers for scale in (1, 100, 0.01)]
-    # Datas serializadas e códigos textuais também podem sustentar números na resposta.
+    pool = list(evidence_numbers)
+    # Inclui detalhes textuais do SQL, como "Central: 10, Loja: 2", além de datas/códigos.
     pool += [
         candidate
         for row in output.rows
         for value in row
         if isinstance(value, str)
-        and re.fullmatch(r"\d+(?:[.,]\d+)*|\d{4}-\d{2}-\d{2}(?:[ T].*)?", value)
         for token in numbers_in(value)
         for candidate in number_candidates(token)
     ]
     pool.append(float(len(output.rows)))
     pool += [c for token in numbers_in(question) for c in number_candidates(token)]
 
-    tokens = numbers_in(" ".join([output.answer, *output.insights]))
-    missing = [
-        token
-        for token in tokens
-        if not any(
-            any(close(candidate, known) for known in pool) for candidate in number_candidates(token)
-        )
-    ]
-    score = 1.0 if not tokens else (len(tokens) - len(missing)) / len(tokens)
+    text = " ".join([output.answer, *output.insights])
+    matches = list(NUMBER.finditer(text))
+
+    def supported(match: re.Match[str]) -> bool:
+        candidates = number_candidates(match.group())
+        # Conversão de escala exige unidade percentual explícita na afirmação.
+        # Dinheiro e contagens não podem ganhar uma correspondência por fator 100.
+        if re.match(r"\s*(?:%|por cento\b)", text[match.end() :], re.IGNORECASE):
+            candidates |= {number / 100 for number in candidates}
+        return any(close(candidate, known) for candidate in candidates for known in pool)
+
+    missing = [match.group() for match in matches if not supported(match)]
+    score = 1.0 if not matches else (len(matches) - len(missing)) / len(matches)
     return score, missing
 
 
@@ -305,20 +310,25 @@ class ExpectedBehavior(Evaluator[str, EvalOutput, CaseMeta]):
 
 @dataclass
 class EvidenceMatches(Evaluator[str, EvalOutput, CaseMeta]):
-    golden: dict[str, QueryResult]
+    golden: dict[str, list[QueryResult]]
 
     def evaluate(self, ctx: EvaluatorContext[str, EvalOutput, CaseMeta]) -> dict[str, Any]:
-        golden = self.golden.get(ctx.name or "")
-        if golden is None:
+        variants = self.golden.get(ctx.name or "")
+        if variants is None:
             return {}
         if not ctx.output.columns:
             return {"evidencia": EvaluationReason(False, "sem evidência")}
-        ok, reason = evidence_matches(
-            golden,
-            ctx.output.evidence(),
-            percentage_columns=meta(ctx.metadata).percentage_columns,
-        )
-        return {"evidencia": EvaluationReason(ok, reason)}
+        reasons = []
+        for golden in variants:
+            ok, reason = evidence_matches(
+                golden,
+                ctx.output.evidence(),
+                percentage_columns=meta(ctx.metadata).percentage_columns,
+            )
+            if ok:
+                return {"evidencia": EvaluationReason(True, reason)}
+            reasons.append(reason)
+        return {"evidencia": EvaluationReason(False, "; ".join(reasons))}
 
 
 @dataclass
@@ -375,6 +385,7 @@ def make_task(
     model_id: str,
     secret: str | None,
     runs: RunLog,
+    usage_limits: UsageLimits | None = None,
 ) -> Callable[[str], EvalOutput]:
     """A tarefa avaliada: uma pergunta ao agente, com gravações recusadas automaticamente."""
 
@@ -383,25 +394,26 @@ def make_task(
             return run_with_cursor(question, cursor)
 
     def run_with_cursor(question: str, cursor: duckdb.DuckDBPyConnection) -> EvalOutput:
-        deps = AgentDeps(cursor, glossary)
+        deps = AgentDeps(cursor, glossary, usage_limits=usage_limits)
+        usage = RunUsage()
         rows_before = raw_row_count(deps.con)
         save_requested = False
         try:
             with tracked(runs, question, "eval") as run:
-                outcome = run.finish(ask(question, deps, model))
+                outcome = run.finish(ask(question, deps, model, usage=usage))
             while isinstance(outcome, PendingApproval):  # numa eval, ninguém aprova gravação
                 save_requested = True
                 with tracked(runs, question, "eval", phase="resume") as run:
                     outcome = run.finish(resume(outcome, approved=False, deps=deps, model=model))
         except (AgentRunError, FallbackExceptionGroup) as error:
             return EvalOutput(error=explain_model_failure(error))
-
-        usage = outcome.usage
-        increment_eval_metric("requisicoes", usage.requests)
-        increment_eval_metric("tokens", usage.input_tokens + usage.output_tokens)
-        cost = cost_usd(model_id, usage.input_tokens, usage.output_tokens)
-        if cost is not None:
-            increment_eval_metric("custo_usd", cost)
+        finally:
+            # Chamadas já concluídas podem ter custo mesmo quando o agente termina em erro.
+            increment_eval_metric("requisicoes", usage.requests)
+            increment_eval_metric("tokens", usage.input_tokens + usage.output_tokens)
+            cost = cost_usd(model_id, usage.input_tokens, usage.output_tokens)
+            if cost is not None:
+                increment_eval_metric("custo_usd", cost)
 
         answer = outcome.output
         evidence = outcome.evidence or QueryResult([], [])
@@ -422,9 +434,11 @@ def make_task(
     return run_case
 
 
-def golden_results(dataset: EvalDataset, con: duckdb.DuckDBPyConnection) -> dict[str, QueryResult]:
+def golden_variants(
+    dataset: EvalDataset, con: duckdb.DuckDBPyConnection
+) -> dict[str, list[QueryResult]]:
     """Valida os casos e o SQL antes de consumir cota; evidência truncada não serve de gabarito."""
-    results = {}
+    results: dict[str, list[QueryResult]] = {}
     names: set[str] = set()
     for case in dataset.cases:
         if not case.name or case.name in names:
@@ -433,17 +447,26 @@ def golden_results(dataset: EvalDataset, con: duckdb.DuckDBPyConnection) -> dict
         metadata = meta(case.metadata)
         if metadata.expect == "answer" and not metadata.golden_sql:
             raise ValueError(f"{case.name}: resposta esperada sem gabarito SQL.")
-        if metadata.expect != "answer" and metadata.golden_sql:
+        if metadata.expect != "answer" and (metadata.golden_sql or metadata.alternative_sql):
             raise ValueError(f"{case.name}: recusa/segurança não deve ter gabarito SQL.")
         if metadata.golden_sql:
-            check_query(metadata.golden_sql)
-            result = query_rows(con, metadata.golden_sql, max_rows=51)
-            if any(index >= len(result.columns) for index in metadata.percentage_columns):
-                raise ValueError(f"{case.name}: coluna percentual inexistente no gabarito.")
-            if len(result.rows) > 50:
-                raise ValueError(f"{case.name}: gabarito excede o limite de 50 linhas do agente.")
-            results[case.name] = result
+            results[case.name] = []
+            for sql in [metadata.golden_sql, *metadata.alternative_sql]:
+                check_query(sql)
+                result = query_rows(con, sql, max_rows=51)
+                if any(index >= len(result.columns) for index in metadata.percentage_columns):
+                    raise ValueError(f"{case.name}: coluna percentual inexistente no gabarito.")
+                if len(result.rows) > 50:
+                    raise ValueError(
+                        f"{case.name}: gabarito excede o limite de 50 linhas do agente."
+                    )
+                results[case.name].append(result)
     return results
+
+
+def golden_results(dataset: EvalDataset, con: duckdb.DuckDBPyConnection) -> dict[str, QueryResult]:
+    """Gabarito principal de cada caso; também valida as alternativas explícitas."""
+    return {name: variants[0] for name, variants in golden_variants(dataset, con).items()}
 
 
 def select_cases(dataset: EvalDataset, category: str | None, limit: int | None) -> EvalDataset:
@@ -460,14 +483,16 @@ def evaluate(
     runs: RunLog,
     secret: str | None = None,
     concurrency: int = 2,
+    *,
+    usage_limits: UsageLimits | None = None,
 ) -> EvaluationReport[str, EvalOutput, CaseMeta]:
     dataset.evaluators = [
         ExpectedBehavior(),
-        EvidenceMatches(golden_results(dataset, con)),
+        EvidenceMatches(golden_variants(dataset, con)),
         MentionsExpected(),
         NumbersGrounded(),
     ]
-    task = make_task(con, glossary, model, model_id, secret, runs)
+    task = make_task(con, glossary, model, model_id, secret, runs, usage_limits)
     return dataset.evaluate_sync(task, name=model_id, max_concurrency=concurrency, progress=False)
 
 
@@ -486,6 +511,8 @@ class CaseResult(BaseModel):
     seconds: float
     answer: str
     error: str | None
+    question: str = ""
+    output: EvalOutput | None = None
 
 
 class RunSummary(BaseModel):
@@ -494,6 +521,7 @@ class RunSummary(BaseModel):
     cases: list[CaseResult]
     suite: str = "brasileirao"
     suite_revision: str | None = None
+    grading_revision: str | None = None
 
     def rate(self, check: str, category: str | None = None) -> float | None:
         values = [
@@ -526,6 +554,8 @@ def summarize(
                 seconds=case.task_duration,
                 answer=case.output.answer[:300],
                 error=case.output.error,
+                question=case.inputs,
+                output=case.output,
             )
         )
     for failure in report.failures:  # exceção inesperada na tarefa: conta como erro
@@ -542,6 +572,7 @@ def summarize(
                 seconds=0,
                 answer="",
                 error=failure.error_message,
+                question=failure.inputs,
             )
         )
     return RunSummary(
@@ -555,6 +586,52 @@ def summarize(
 
 def percent(value: float | None) -> str:
     return "–" if value is None else f"{value:.0%}"
+
+
+def regrade_summary(summary: RunSummary) -> RunSummary:
+    """Reavalia saídas salvas sem modelo; preserva consumo, data e revisão da execução."""
+    suite = SUITES[summary.suite]
+    dataset = load_cases(suite.cases)
+    originals = {case.name: case for case in summary.cases}
+    available = {case.name for case in dataset.cases}
+    if len(originals) != len(summary.cases) or not originals.keys() <= available:
+        raise ValueError("Relatório contém casos duplicados ou desconhecidos.")
+    dataset.cases = [case for case in dataset.cases if case.name in originals]
+    outputs: dict[str, EvalOutput] = {}
+    with suite_database(suite) as (con, _):
+        for case in dataset.cases:
+            saved = originals[case.name or ""]
+            if saved.question != case.inputs or saved.output is None or case.inputs in outputs:
+                raise ValueError(f"{case.name}: pergunta alterada, duplicada ou saída ausente.")
+            output = saved.output
+            if output.answerable and output.sql:
+                check_query(output.sql)
+                current = query_rows(con, output.sql)
+                rows = [[jsonable(value) for value in row] for row in current.rows]
+                if current.columns != output.columns or rows != output.rows:
+                    raise ValueError(
+                        f"{case.name}: evidência mudou; é necessária uma nova execução."
+                    )
+            outputs[case.inputs] = output
+        dataset.evaluators = [
+            ExpectedBehavior(),
+            EvidenceMatches(golden_variants(dataset, con)),
+            MentionsExpected(),
+            NumbersGrounded(),
+        ]
+        report = dataset.evaluate_sync(outputs.__getitem__, max_concurrency=1, progress=False)
+    graded = summarize(report, summary.model, summary.suite)
+    cases = [
+        originals[case.name].model_copy(
+            update={
+                "checks": case.checks,
+                "reasons": case.reasons,
+                "grounding": case.grounding,
+            }
+        )
+        for case in graded.cases
+    ]
+    return summary.model_copy(update={"cases": cases, "grading_revision": suite.revision()})
 
 
 def render_markdown(summaries: Sequence[RunSummary]) -> str:
@@ -573,6 +650,11 @@ def render_markdown(summaries: Sequence[RunSummary]) -> str:
         lines.append(f"| {label} | " + " | ".join(values) + " |")
 
     row("Suíte", [s.suite for s in summaries])
+    row("Revisão usada pelo agente", [(s.suite_revision or "–")[:12] for s in summaries])
+    row(
+        "Revisão da correção",
+        [(s.grading_revision or s.suite_revision or "–")[:12] for s in summaries],
+    )
     row("Casos", [str(len(s.cases)) for s in summaries])
     row("Comportamento correto", [percent(s.rate("comportamento")) for s in summaries])
     row("Evidência = gabarito", [percent(s.rate("evidencia")) for s in summaries])
@@ -582,7 +664,7 @@ def render_markdown(summaries: Sequence[RunSummary]) -> str:
     row("Tokens por caso", [f"{mean(s, 'tokens'):,.0f}" for s in summaries])
     row("Tempo por caso", [f"{mean(s, 'seconds'):.1f} s" for s in summaries])
     row("Custo total", [total_cost(s) for s in summaries])
-    row("Erros de API", [str(sum(c.error is not None for c in s.cases)) for s in summaries])
+    row("Falhas de execução", [str(sum(c.error is not None for c in s.cases)) for s in summaries])
 
     categories = sorted({case.category for s in summaries for case in s.cases})
     lines += ["", "## Comportamento correto por categoria", ""]
@@ -619,9 +701,12 @@ def save_summary(summary: RunSummary, results_dir: Path = RESULTS_DIR) -> Path:
     model_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", summary.model)
     path = suite_dir / f"{model_name}.json"
     path.write_text(summary.model_dump_json(indent=2), encoding="utf-8")
+    # Rodadas arquivadas em subdiretórios não podem contaminar o comparativo atual.
+    files = [*results_dir.glob("*.json")]
+    for suite in SUITES:
+        files.extend((results_dir / suite).glob("*.json"))
     summaries = [
-        RunSummary.model_validate_json(file.read_text(encoding="utf-8"))
-        for file in sorted(results_dir.rglob("*.json"))
+        RunSummary.model_validate_json(file.read_text(encoding="utf-8")) for file in sorted(files)
     ]
     (results_dir / "README.md").write_text(render_markdown(summaries), encoding="utf-8")
     return path
@@ -637,15 +722,25 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--validate-only", action="store_true", help="valida dados e gabaritos offline, sem modelo"
     )
+    parser.add_argument("--regrade", type=Path, help="reavalia um relatório salvo, sem modelo")
     parser.add_argument("--category", help="roda só uma categoria (ex.: recusa)")
     parser.add_argument("--limit", type=int, help="roda só os N primeiros casos")
     parser.add_argument("--concurrency", type=int, default=2, help="casos em paralelo")
+    parser.add_argument("--request-limit", type=int, default=6, help="requisições por caso")
+    parser.add_argument("--tool-calls-limit", type=int, default=12, help="ferramentas por caso")
+    parser.add_argument(
+        "--output-dir", type=Path, default=RESULTS_DIR, help="diretório dos relatórios da rodada"
+    )
     parser.add_argument("--yes", action="store_true", help="não pede confirmação do custo")
     args = parser.parse_args(argv)
     if args.limit is not None and args.limit < 1:
         parser.error("--limit deve ser positivo.")
     if args.concurrency < 1:
         parser.error("--concurrency deve ser positivo.")
+    if args.request_limit < 1 or args.tool_calls_limit < 1:
+        parser.error("--request-limit e --tool-calls-limit devem ser positivos.")
+    if args.regrade is not None and args.validate_only:
+        parser.error("Use --regrade ou --validate-only, separadamente.")
     return args
 
 
@@ -670,6 +765,13 @@ def secret_value(secret: SecretStr | None) -> str | None:
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     pydantic_ai.BANNER_ENABLED = False
+    if args.regrade is not None:
+        if args.regrade.resolve().parents[1] == args.output_dir.resolve():
+            sys.exit("Escolha outro --output-dir para preservar o relatório original.")
+        saved = RunSummary.model_validate_json(args.regrade.read_text(encoding="utf-8"))
+        path = save_summary(regrade_summary(saved), args.output_dir)
+        print(f"Reavaliação offline salva em {path}.")
+        return
     suite = SUITES[args.suite]
     dataset = select_cases(load_cases(suite.cases), args.category, args.limit)
     if not dataset.cases:
@@ -690,7 +792,8 @@ def main(argv: list[str] | None = None) -> None:
         if not args.yes and not confirm(question + estimated_cost(model_id, len(dataset.cases))):
             sys.exit("Cancelado.")
         try:
-            model = google_model(model_id, settings.google_api_key, LAST_MODEL_RETRIES)
+            # Cada erro da API entra no relatório sem novas tentativas cobradas pelo SDK.
+            model = google_model(model_id, settings.google_api_key, retries=0)
         except ValueError as error:
             sys.exit(str(error))
         setup_tracing(settings)
@@ -703,7 +806,10 @@ def main(argv: list[str] | None = None) -> None:
             RunLog.from_settings(settings),
             secret_value(settings.google_api_key),
             args.concurrency,
+            usage_limits=UsageLimits(
+                request_limit=args.request_limit, tool_calls_limit=args.tool_calls_limit
+            ),
         )
     report.print(include_reasons=True, include_averages=True)
-    path = save_summary(summarize(report, model_id, suite.name, revision))
-    print(f"\nResumo salvo em {path} e {RESULTS_DIR / 'README.md'}")
+    path = save_summary(summarize(report, model_id, suite.name, revision), args.output_dir)
+    print(f"\nResumo salvo em {path} e {args.output_dir / 'README.md'}")
