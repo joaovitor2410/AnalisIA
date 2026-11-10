@@ -41,7 +41,9 @@ def test_free_portfolio_ignores_personal_configuration_and_all_examples_work(
     assert settings.google_api_key is None and settings.olheiro_dataset is None
     assert settings.olheiro_demo_mode and not settings.olheiro_demo_model_enabled
     assert settings.duckdb_path != personal
-    app = AppTest.from_file(str(PROJECT_ROOT / "portfolio_app.py"), default_timeout=20).run()
+    app = AppTest.from_file(str(PROJECT_ROOT / "portfolio_app.py"), default_timeout=30)
+    app.session_state["portfolio-mode"] = "Análises prontas"
+    app.run()
     assert not app.exception
     questions = app.pills(key="example").options
     assert len(questions) == 10
@@ -58,12 +60,16 @@ def test_free_portfolio_ignores_personal_configuration_and_all_examples_work(
 
 def test_two_portfolio_visitors_have_private_dashboards() -> None:
     path = str(PROJECT_ROOT / "portfolio_app.py")
-    first = AppTest.from_file(path, default_timeout=20).run()
+    first = AppTest.from_file(path, default_timeout=30)
+    first.session_state["portfolio-mode"] = "Análises prontas"
+    first.run()
     question = first.pills(key="example").options[0]
     first.pills(key="example").set_value(question).run()
     first.button(key="pin-0").click().run()
     assert len(first.session_state["demo_resources"].dashboard.read().items) == 1
-    second = AppTest.from_file(path, default_timeout=20).run()
+    second = AppTest.from_file(path, default_timeout=30)
+    second.session_state["portfolio-mode"] = "Análises prontas"
+    second.run()
     assert not second.exception
     assert second.session_state["demo_resources"].dashboard.read().items == []
     assert second.session_state["history"] == []

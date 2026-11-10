@@ -5,9 +5,10 @@ SQL + tabela + visualização**. O Brasileirão Série A 2003–2024 demonstra o
 incluindo recusas quando os dados não permitem responder.
 
 Projeto de portfólio de João Victor, construído em fases para estudar agentes, Dados e BI.
-Para publicar sem custo, há uma entrada de **demonstração guiada com dados sintéticos**:
-`uv run streamlit run portfolio_app.py`. São dez análises prontas com SQL/tabela/gráfico,
-sem chave ou chamadas ao modelo. Veja [como publicar gratuitamente](docs/publicacao-gratuita.md).
+Para hospedar sem custo, há uma entrada com **workspace individual e dados sintéticos**:
+`uv run streamlit run portfolio_app.py`. A entrada oferece workspace individual, três bases,
+upload CSV/Parquet e perguntas livres com sua chave Gemini por sessão. Há também dez análises
+prontas sem API. Veja [como publicar gratuitamente](docs/publicacao-gratuita.md).
 O núcleo pode ser usado pelo navegador, terminal ou protocolo MCP. **Importe suas bases CSV
 e Parquet**, selecione a base ativa e analise outros domínios com o mesmo agente.
 

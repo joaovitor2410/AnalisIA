@@ -44,6 +44,8 @@ from olheiro.eval_suites import SUITES, suite_database
 from olheiro.evaluation import golden_results, load_cases
 from olheiro.portfolio import portfolio_settings
 from olheiro.conversation_evaluation import load_scenarios, validate_scenarios
+from olheiro.visitor import create_workspace
+from olheiro.ui.resources import visitor_resources
 settings = Settings(_env_file=None, google_api_key=None, anthropic_api_key=None,
                     olheiro_dataset=None, olheiro_demo_mode=True)
 assert settings.raw_data_dir.is_relative_to(RESOURCE_ROOT)
@@ -59,6 +61,15 @@ with connect_agent(public.duckdb_path, None) as con:
     assert scalar(con, 'SELECT count(*) FROM raw.orders') == 120
     assert len(load_examples(public.demo_examples_path, con).questions()) == 10
 assert public.google_api_key is None and not public.olheiro_demo_model_enabled
+visitor = create_workspace(public)
+try:
+    active = visitor_resources(visitor, None)
+    assert not active.settings.olheiro_demo_mode and active.model is None
+    assert scalar(active.con, 'SELECT count(*) FROM raw.orders') == 120
+    stock = visitor_resources(visitor, str(visitor.settings.datasets_dir / 'estoque/dataset.toml'))
+    assert scalar(stock.con, "SELECT sum(quantity) FROM raw.stock WHERE sku='001'") == 12
+finally:
+    visitor.close()
 validate_scenarios(load_scenarios())
 print('Wheel instalado: recursos, carga, demo e três suítes offline OK.')
 """

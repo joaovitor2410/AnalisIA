@@ -27,6 +27,7 @@ from olheiro.semantic import Glossary, load_glossary
 from olheiro.storage import JsonFile
 from olheiro.telemetry import RunLog
 from olheiro.tracing import setup_tracing
+from olheiro.visitor import VisitorWorkspace, current_workspace
 
 
 @dataclass(frozen=True)
@@ -117,15 +118,68 @@ def shared_resources(dataset_path: str | None = None, profile_key: str = "") -> 
         raise
 
 
+def visitor_resources(workspace: VisitorWorkspace, selection: str | None) -> AppResources:
+    """Conexões e cache de dados particulares nunca entram em st.cache_resource."""
+    pydantic_ai.BANNER_ENABLED = False
+    settings = workspace.settings
+    if selection is not None:
+        path = Path(selection).resolve()
+        if path.parent.parent != settings.datasets_dir.resolve() or path.name != "dataset.toml":
+            raise ValueError("A base selecionada não pertence a esta sessão.")
+        settings = settings.for_dataset(path)
+    key = str(settings.duckdb_path)
+    if key not in workspace.resources:
+        setup_tracing(settings)
+        con = connect_agent(settings.duckdb_path, settings.workspace_path)
+        try:
+            revision = database_revision(settings)
+            namespace = cache_revision(settings, revision)
+            cache = AnswerCache(settings.answer_cache_path, namespace)
+            if (
+                not settings.answer_cache_path.exists()
+                and settings.duckdb_path.parent.name == "loja"
+            ):
+                curated = load_examples(settings.demo_examples_path, con)
+                with cache.file.update() as target:
+                    target.namespace = namespace
+                    target.answers = curated.read().answers
+            workspace.resources[key] = AppResources(
+                settings=settings,
+                con=con,
+                glossary=load_glossary(settings.glossary_path),
+                cache=cache,
+                dashboard=DashboardStore(settings.dashboard_path, dataset_identity(settings)),
+                runs=RunLog.from_settings(settings, include_content=False),
+                model=None,
+                model_error=None,
+                data_revision=revision,
+            )
+        except BaseException:
+            con.close()
+            raise
+    return replace(
+        workspace.resources[key],
+        model=workspace.model,
+        settings=settings.model_copy(update={"olheiro_model": workspace.model_name}),
+        model_error="Conecte sua chave Gemini em Conectar IA, na barra lateral."
+        if workspace.model is None
+        else None,
+    )
+
+
 def load_resources() -> AppResources:
     """Dados públicos compartilhados; cache e painel privados para cada sessão da demo."""
     selection = st.session_state.get("selected_dataset")
     # Perfil público tem recursos próprios mesmo em testes que abrem os dois apps no processo.
-    shared = (
-        shared_resources(selection, profile_key="portfolio")
-        if has_settings_scope()
-        else shared_resources(selection)
-    )
+    workspace = current_workspace()
+    if workspace is not None:
+        shared = visitor_resources(workspace, selection)
+    else:
+        shared = (
+            shared_resources(selection, profile_key="portfolio")
+            if has_settings_scope()
+            else shared_resources(selection)
+        )
     if not shared.settings.olheiro_demo_mode and shared.settings.olheiro_dataset is not None:
         settings = shared.settings.for_dataset(shared.settings.olheiro_dataset)
         revision = cache_revision(settings, shared.data_revision)
@@ -133,7 +187,9 @@ def load_resources() -> AppResources:
             shared,
             settings=settings,
             glossary=load_glossary(settings.glossary_path),
-            cache=dataset_cache(settings.answer_cache_path, revision),
+            cache=AnswerCache(settings.answer_cache_path, revision)
+            if workspace is not None
+            else dataset_cache(settings.answer_cache_path, revision),
         )
         previous_revision = st.session_state.get("semantic_revision")
         if previous_revision is not None and previous_revision != revision:
@@ -185,7 +241,11 @@ def session_deps(resources: AppResources) -> AgentDeps:
             session_cursor(resources.con),
             resources.glossary,
             allow_saves=not demo,
-            usage_limits=UsageLimits(request_limit=6, tool_calls_limit=12) if demo else None,
+            usage_limits=UsageLimits(request_limit=12, tool_calls_limit=24)
+            if current_workspace() is not None
+            else UsageLimits(request_limit=6, tool_calls_limit=12)
+            if demo
+            else None,
         )
     else:
         st.session_state.deps.glossary = resources.glossary

@@ -32,6 +32,10 @@ def data_page() -> None:
     tables = columns_by_table(con, "schema_name", RAW_SCHEMA)
     context_strip(resources.settings.dataset_title, len(tables), sum(map(len, tables.values())))
     if not resources.settings.olheiro_demo_mode:
+        if st.button("Perguntar sobre esta base", key="ask-active-dataset"):
+            st.session_state["open-ask-page"] = True
+            st.rerun()
+    if not resources.settings.olheiro_demo_mode:
         show_import(resources.settings)
         show_semantic_editor(resources.settings, con, glossary)
     if not glossary.tables:

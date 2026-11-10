@@ -4,41 +4,84 @@ Rodar:
     uv run streamlit run src/olheiro/app.py
 """
 
+from collections import Counter
+
 import streamlit as st
 
 from olheiro.config import get_settings, has_settings_scope
 from olheiro.datasets import discover_datasets
 from olheiro.db import WorkspaceInUseError
 from olheiro.ui.ask_page import ask_page
+from olheiro.ui.connection_panel import show_connection, show_mode_selector, show_session_end
 from olheiro.ui.dashboard_page import dashboard_page
 from olheiro.ui.data_page import data_page
 from olheiro.ui.ops_page import ops_page
 from olheiro.ui.presentation import apply_identity, connection_status
 from olheiro.ui.resources import load_resources
+from olheiro.visitor import current_workspace
+
+
+def select_dataset() -> None:
+    # Estado durável separado do widget, que o Streamlit recria ao mudar de página.
+    st.session_state.active_dataset = st.session_state.selected_dataset
+    st.session_state.pop("import_preview", None)
 
 
 def show_sidebar() -> None:
     settings = get_settings()
+    if has_settings_scope():
+        show_mode_selector()
     st.caption("SEU ESPAÇO DE ANÁLISE")
     if not settings.olheiro_demo_mode:
         datasets = discover_datasets(settings.datasets_dir)
         if settings.olheiro_dataset:
             datasets.pop(settings.olheiro_dataset, None)
         options = [None, *map(str, datasets)]
-        labels = {str(path): title for path, title in datasets.items()}
+        counts = Counter([settings.dataset_title, *datasets.values()])
+        labels: dict[str | None, str] = {
+            str(path): f"{title} ({path.parent.name})" if counts[title] > 1 else title
+            for path, title in datasets.items()
+        }
+        labels[None] = (
+            f"{settings.dataset_title} (base inicial)"
+            if counts[settings.dataset_title] > 1
+            else settings.dataset_title
+        )
+
+        def dataset_label(value: str | None) -> str:
+            # Streamlit serializa o valor usando o rótulo. Preserve também rótulos já formatados.
+            if value in labels:
+                return labels[value]
+            return (
+                value if value is not None and value in labels.values() else settings.dataset_title
+            )
+
         if "next_dataset" in st.session_state:
-            st.session_state.selected_dataset = st.session_state.pop("next_dataset")
-        if st.session_state.get("selected_dataset") not in options:
-            st.session_state.selected_dataset = None
+            st.session_state.active_dataset = st.session_state.pop("next_dataset")
+        if "active_dataset" not in st.session_state:
+            st.session_state.active_dataset = st.session_state.get("selected_dataset")
+        selected = st.session_state.active_dataset
+        if selected not in options:
+            st.session_state.active_dataset = next(
+                (value for value, label in labels.items() if label == selected), None
+            )
+        st.session_state.selected_dataset = st.session_state.active_dataset
         st.selectbox(
             "Base de dados",
             options,
             key="selected_dataset",
-            format_func=lambda value: labels.get(value, settings.dataset_title),
+            format_func=dataset_label,
+            on_change=select_dataset,
             help="Escolha uma base. Importe novos arquivos na página Dados.",
         )
+        if st.button("Importar CSV/Parquet", key="open-import"):
+            st.session_state["open-data-page"] = True
     resources = load_resources()
     st.caption(f"Base ativa: {resources.settings.dataset_title}")
+    workspace = current_workspace()
+    if workspace is not None:
+        show_connection(workspace)
+        show_session_end(workspace)
     demo = resources.settings.olheiro_demo_mode
     if demo:
         st.caption("Modo demonstração · seu dashboard pertence a esta sessão")
@@ -47,9 +90,14 @@ def show_sidebar() -> None:
         st.info("Escolha uma pergunta pronta para explorar os dados.")
     elif resources.model is None:
         connection_status("IA não configurada", configured=False)
-        with st.expander("Configurar o modelo"):
-            st.warning(f"Modelo indisponível: {resources.model_error}", icon=":material/warning:")
-            st.caption("A exploração de dados e o dashboard continuam disponíveis.")
+        if workspace is not None:
+            st.caption("Use Conectar IA para habilitar perguntas livres.")
+        else:
+            with st.expander("Configurar o modelo"):
+                st.warning(
+                    f"Modelo indisponível: {resources.model_error}", icon=":material/warning:"
+                )
+                st.caption("A exploração de dados e o dashboard continuam disponíveis.")
     else:
         connection_status("IA configurada", configured=True)
         with st.expander("Detalhes do ambiente"):
@@ -68,11 +116,17 @@ def show_sidebar() -> None:
 st.set_page_config(page_title="AnalisIA", page_icon="✦", layout="wide")
 apply_identity()
 if has_settings_scope():
-    st.info(
-        "Demonstração gratuita com dados fictícios e análises prontas. "
-        "Escolha uma sugestão, confira SQL/tabela/gráfico e fixe no dashboard. "
-        "Novas análises com IA estão disponíveis na execução local do projeto."
-    )
+    if current_workspace() is not None:
+        st.info(
+            "Seu workspace: escolha uma base ou importe CSV/Parquet em Dados. "
+            "Para perguntas livres, conecte sua chave em Conectar IA. "
+            "Seus dados ficam isolados nesta sessão."
+        )
+    else:
+        st.info(
+            "Demonstração gratuita com dados fictícios e análises prontas. "
+            "Para importar dados e fazer novas perguntas, selecione Meu workspace na barra lateral."
+        )
     st.link_button("Código e execução local", "https://github.com/joaovitor2410/AnalisIA")
 try:
     with st.sidebar:
@@ -90,4 +144,9 @@ pages = [
 ]
 if not load_resources().settings.olheiro_demo_mode:
     pages.append(st.Page(ops_page, title="Operação", icon=":material/monitoring:"))
-st.navigation(pages).run()
+navigation = st.navigation(pages)
+if st.session_state.pop("open-data-page", False):
+    st.switch_page(pages[2])
+if st.session_state.pop("open-ask-page", False):
+    st.switch_page(pages[0])
+navigation.run()

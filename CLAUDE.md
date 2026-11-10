@@ -9,6 +9,19 @@ responder. Dataset de demonstração: Campeonato Brasileiro 2003–2024 (`data/r
 em fases com mentoria. **Primeiro projeto de agentes do autor: explicar conceitos antes de codar.**
 
 ## Visão do produto (definida em 2026-10-22)
+**Correção de 10/11/2026:** o autor relatou bloqueios de dataset/chat no site publicado.
+A entrada `portfolio_app.py` deixou de impor apenas a demo: abre `Meu workspace`, com
+Loja/Vendas/Estoque individuais, upload CSV/Parquet e conexão Gemini pela chave do visitante.
+Dados, modelos e credenciais ficam na sessão, sem cache global de recursos particulares.
+A opção `Análises prontas` continua sem API. Corrigido também o seletor: rótulos idempotentes,
+desambiguação de títulos iguais e `active_dataset` persistente entre páginas.
+Conectar/desconectar IA preserva a base e limpa contexto/aprovações; encerrar a sessão fecha
+conexões e remove arquivos. UI tem acesso direto a importar e perguntar sobre a base ativa.
+351 testes offline e smoke do wheel passaram. O autor autorizou o teste real limitado
+(pergunta de faturamento, dados sintéticos, até quatro requisições, sem retries do SDK).
+O processo encerrou, mas sua saída não pôde ser recuperada: resultado inconclusivo.
+Não repetir a chamada sem nova aprovação do autor. Ver relatório
+`docs/correcao-workspace-2026-11-10.md`. O site só muda após push/redeploy autorizado.
 **Decisão atual de 09/11/2026:** hospedagem gratuita para portfólio. Preparada entrada
 `portfolio_app.py` para Community Cloud, com dados sintéticos, dez análises prontas e modelo
 desabilitado. Guia: `docs/publicacao-gratuita.md`; entrega: `docs/entrega-portfolio-gratuito.md`.
@@ -65,7 +78,7 @@ entrega continuam pendentes; push não foi autorizado. Relatório: `docs/f5-2026
 roteiro de código/produto/operação: `docs/pendencias-projeto.md`.
 - Funções: chat analítico com evidência e passos do agente; dashboard (fixar respostas, KPIs);
   explorador de dados; perguntas prontas via cache; importação/seleção de bases pessoais
-  CSV/Parquet (F9A). Upload do visitante da demo continua fora do escopo.
+  CSV/Parquet (F9A). A entrada hospedada permite upload por visitante em Meu workspace.
 - Ideia central: o LLM **cria** a análise uma vez; dashboard e cache **reexecutam** o SQL
   validado, sem o modelo (custo zero, sempre com os dados atuais).
 - Demo pública (quando publicar): cache + limite de perguntas por sessão (escolha do autor).

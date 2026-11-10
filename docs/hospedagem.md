@@ -1,5 +1,10 @@
 # Opções para a demo pública — F8C.2
 
+**Correção de 10/11/2026:** `portfolio_app.py` agora oferece workspace individual com
+troca/upload de datasets e chave Gemini por sessão. As análises prontas continuam sem API.
+Não é necessário configurar chave compartilhada no servidor; o consumo pertence à chave do usuário.
+Veja [correcao-workspace-2026-11-10.md](correcao-workspace-2026-11-10.md).
+
 **Decisão atualizada em 09/11/2026:** o autor escolheu hospedagem sem custo para portfólio.
 A entrada preparada é `portfolio_app.py`, para Streamlit Community Cloud, com dados sintéticos
 e modelo desabilitado. Siga [publicacao-gratuita.md](publicacao-gratuita.md). A comparação

@@ -1,4 +1,4 @@
-"""Entrada pública gratuita: dados fictícios e SQL curado, sem acesso ao modelo."""
+"""Entrada hospedada: workspace por sessão e análises prontas sem API."""
 
 import atexit
 import runpy
@@ -11,6 +11,7 @@ from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, Settings
 
 from olheiro.config import Settings, resource_path, settings_scope
 from olheiro.launcher import ensure_database
+from olheiro.visitor import create_workspace, workspace_scope
 
 
 class PortfolioSettings(Settings):
@@ -67,5 +68,13 @@ def portfolio_settings() -> Settings:
 
 
 def run() -> None:
-    with settings_scope(portfolio_settings()):
-        runpy.run_path(str(Path(__file__).with_name("app.py")), run_name="__main__")
+    public = portfolio_settings()
+    if st.session_state.get("portfolio-mode", "Meu workspace") == "Análises prontas":
+        with settings_scope(public):
+            runpy.run_path(str(Path(__file__).with_name("app.py")), run_name="__main__")
+    else:
+        if "visitor-workspace" not in st.session_state:
+            st.session_state["visitor-workspace"] = create_workspace(public)
+        workspace = st.session_state["visitor-workspace"]
+        with workspace_scope(workspace), settings_scope(workspace.settings):
+            runpy.run_path(str(Path(__file__).with_name("app.py")), run_name="__main__")

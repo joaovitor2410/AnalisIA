@@ -1,20 +1,31 @@
-# Publicar a demo gratuita do portfólio
+# Publicar a AnalisIA no portfólio
 
 Escolha de 09/11/2026: **Streamlit Community Cloud**, usando `portfolio_app.py`.
 O serviço oferece hospedagem gratuita e integra com GitHub; não é necessário contratar
 VPS, domínio ou banco externo. [Documentação oficial](https://docs.streamlit.io/deploy/streamlit-community-cloud).
 
-## O que esta entrada apresenta
+## Workspace completo e análises prontas
 
-Uma loja fictícia com 120 pedidos, 13 clientes, seis meses e dez análises curadas. O visitante
-escolhe uma pergunta pronta, confere SQL/tabela/gráfico, explora os dados e monta um dashboard
-da sessão. Não há upload, chamada a LLM nem pergunta livre nesse perfil. A interface informa
-que a geração de novas análises com IA está disponível na execução local do projeto.
+A partir da correção de 10/11, `portfolio_app.py` abre **Meu workspace** por padrão.
+A barra lateral permite trocar entre Loja, Vendas e Estoque, importar CSV/Parquet e conectar
+a IA. Em **Importar CSV/Parquet**, confira a prévia, importe e clique **Perguntar sobre esta base**.
+A base selecionada permanece ativa ao navegar entre páginas ou conectar/desconectar a IA.
 
-O perfil ignora `.env`, variáveis de ambiente e segredos pessoais. Não coloque chaves de API
-na configuração desta demo: elas não são necessárias. Banco e estado são temporários;
-reiniciar recria os dados e cada visitante tem histórico/dashboard próprios. Isso combina
-com a proposta de demonstração sem exigir disco persistente ou quota distribuída.
+Em **Conectar IA**, informe sua chave Gemini e clique **Usar chave nesta sessão**. A chave
+é mantida pelo cliente de IA somente na sessão, sem cache global ou gravação em arquivos.
+O campo de senha é limpo ao enviar. Perguntas e dados necessários à análise são enviados ao
+Google, usando a cota/faturamento da chave informada. Hospedagem gratuita não torna a API gratuita.
+
+O modo **Análises prontas** continua disponível, com dez exemplos sem chave ou chamada ao
+modelo: loja fictícia com 120 pedidos, 13 clientes e seis meses. Nesse modo, selecione
+**Meu workspace** para habilitar dados próprios e perguntas livres.
+
+O servidor continua ignorando `.env`, variáveis de ambiente e segredos pessoais nessa entrada.
+Não coloque uma chave compartilhada em Secrets: cada visitante conecta a própria chave.
+Datasets, conexões, histórico, cache e dashboard ficam isolados por sessão em diretório
+temporário. Use **Encerrar sessão e apagar meus uploads** para fechar as conexões e remover
+seus arquivos; **Desconectar IA** retira a chave da sessão sem remover as bases.
+Os uploads não têm persistência garantida em reinícios do serviço.
 Os dados sintéticos são do próprio projeto: [origem](../examples/datasets/portfolio/SOURCE.md).
 
 ## Conferir no computador
@@ -24,7 +35,8 @@ uv sync --locked
 uv run --locked streamlit run portfolio_app.py
 ```
 
-Abra o endereço informado. Escolha uma análise, fixe no dashboard e explore Dados.
+Abra o endereço informado. Em Meu workspace, selecione uma base ou importe arquivos.
+Para novas análises, conecte sua chave; para exemplos sem API, escolha Análises prontas.
 O agente completo continua disponível por `uv run --locked analisia`.
 
 ## Passos que dependem da sua conta
@@ -49,16 +61,19 @@ reativá-lo; isso é aceitável para este portfólio. Não há garantia de dispo
 
 ## Aceitação depois de publicar
 
-- Abra em janela anônima: os dez exemplos devem funcionar sem chave.
+- Abra em janela anônima: Meu workspace deve oferecer três bases e importação.
+- Conecte sua chave e envie uma pergunta personalizada sobre a base ativa.
+- Importe um CSV/Parquet, confira a prévia e consulte essa base.
+- Navegue de Dados para Perguntar e confirme que a seleção foi preservada.
+- Alterne para Análises prontas: os dez exemplos devem funcionar sem chave.
 - Confira o gráfico mensal, a recusa de margem e o botão de fixar no dashboard.
 - Abra outra janela anônima: o dashboard deve começar vazio.
-- Confira Dados: 120 pedidos e 13 clientes fictícios; sem importação de arquivos.
+- Confira que os uploads de uma janela não aparecem no outro visitante.
 - Confira no celular e pelo teclado a legibilidade e a navegação.
 - Reinicie pelo painel: a demo deve voltar com os exemplos disponíveis.
 
-Uma alternativa sem conta de hospedagem é gravar um vídeo curto da execução local e colocá-lo
-no portfólio, junto do GitHub. Se quiser mostrar IA real sem financiar visitantes, grave a
-execução local de uma pergunta nova; a versão pública continua com SQL curado.
+Você pode complementar o link com um vídeo curto. Para publicar sem financiar consultas
+de visitantes, mantenha a conexão de IA por chave individual e o modo sem API com análises prontas.
 
 ## Testar antes do push
 

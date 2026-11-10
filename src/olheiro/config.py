@@ -187,6 +187,11 @@ def has_settings_scope() -> bool:
     return _settings_override.get() is not None
 
 
+def is_guided_demo() -> bool:
+    scoped = _settings_override.get()
+    return scoped is not None and scoped.olheiro_demo_mode
+
+
 def get_settings() -> Settings:
     """Lê as configurações atuais (.env + ambiente)."""
     overridden = _settings_override.get()
